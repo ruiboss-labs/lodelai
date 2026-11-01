@@ -1,0 +1,15 @@
+[package]
+name = "lodelai-effects"
+description = "시간·ID·난수 주입 트레이트와 시스템 구현. core·relay·hook 이 공유하며 의존성을 최소로 둔다 (U13b, #68)"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+getrandom = "0.3"
+time = { version = "0.3", default-features = false, features = ["std", "formatting", "parsing"] }
+
+[lints]
+workspace = true

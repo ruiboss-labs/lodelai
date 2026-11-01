@@ -1,0 +1,25 @@
+[package]
+name = "lodelai-protocol"
+description = "lodelai 프로토콜 타입. 원본은 packages/protocol/schema 의 JSON Schema — src/generated 는 lodelai-protocol-gen 생성물"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# typify 생성 코드가 pattern 검사에 쓴다.
+regress = "0.12.0"
+lodelai-statechart = { path = "../statechart" }
+# 표시 이름 검사(Cc·Cf·Zl·Zp 거름, #326).
+unicode-general-category = "1.1.0"
+# 기기 이름 NFC(#490 묶음 28 §4).
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+lodelai-crypto = { path = "../crypto" }
+
+[lints]
+workspace = true
