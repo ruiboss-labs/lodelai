@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/protocol",
+  "crates/protocol-gen",
+  "crates/relay-client",
+  "crates/statechart",
+  "crates/effects",
+  "crates/testkit",
+  "crates/crypto",
+  "services/relay",
+]
+
+[workspace.package]
+version = "0.1.2"
+edition = "2021"
+publish = false
+rust-version = "1.90"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lodelai-protocol = { path = "crates/protocol" }
+lodelai-crypto = { path = "crates/crypto" }
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# macOS 에서 proc-macro dylib 까지 strip 되면 rustc 가 그 crate 를 못 찾는다(E0463) — 빌드 스크립트·proc-macro 는 strip 하지 않는다.
+[profile.release.build-override]
+strip = false
+
+# 개발 빌드 디스크(10-27 결정): 우리 크레이트는 줄 번호만(백트레이스 파일:줄 유지), 의존 크레이트는 디버그 정보 없음.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+# debug 를 끄면 Cargo 가 strip 기본값을 debuginfo 로 잡는데, package."*" 는 build-override 보다 앞서 proc-macro 에도 걸려
+# dylib 이 벗겨지고 tauri build 가 E0463(tauri_macros)으로 실패했다(17 관문 빌드). 벗길 debug 정보가 없으니 strip 하지 않는다.
+strip = false

@@ -1,0 +1,269 @@
+# lodelai 선(wire) 상태 머신 — 기계가독 전이표 (#18, QA 리뷰 A~H 반영). relay·relay-client·앱이 공유한다.
+# 원천: protocol.md §5. 문서 다이어그램보다 이 파일이 우선한다. 앱 머신(chat·remote_turn)은 비공개 앱 쪽 yaml(같은 legend).
+# lodelai-statechart build.rs 가 이 파일에서 enum·step() 을 생성하고, lodelai-testkit 이 L1 시험 원천으로 읽는다(#559).
+version: 3
+legend:
+  - "한 (state, event) 조합에 대해 행들의 guard 는 상호 배타이며 입력값마다 정확히 한 행이 일치해야 한다(L1 coverage 검사 대상)"
+  - "어떤 행도 일치하지 않는 (state, event, guard 입력) 은 '무시: 상태 불변 + message_events 기록' 이다. 아래 log_ignored 행은 그것을 명시적으로 적은 것"
+  - "from: [a, b] 는 상태마다 한 행으로 펼친다. event: [e1, e2] 도 이벤트마다 펼친다. to: same 은 출발 상태에 머문다"
+  - "이벤트 키는 event: 다(on: 은 YAML 1.1 파서에서 불리언 True 로 읽힌다 — #32)"
+  - "guard: {k: [v1, v2]} 는 k 가 목록 중 하나이면 참. guard 가 없으면 그 (state, event) 의 모든 입력에 대해 참(다른 행이 있으면 안 된다)"
+  - "actions 는 순서가 있다. 앞 액션이 실패하면 뒤 액션은 실행하지 않고 전이도 일어나지 않는다(상태 불변 + 기록)"
+  - "terminal: true 상태에서 출발하는 행은 '종료 상태 예외' 로, 상태를 바꾸지 않는 행만 허용된다(예: 보충 회신)"
+  - "derived 이벤트는 다른 머신의 전이에서 파생된다. 원시 hook 이벤트가 아니다"
+  - "clock_tick 은 시간 경과 이벤트로 모든 머신에서 상태를 바꾸지 않는다. 만료는 clock_expired(Clock 비교 결과) 로 따로 낸다"
+  - "rule: rank 행은 request_sender_view 의 생성 규칙이다(status_rule 참조). L1 생성기가 전수 행으로 펼친다"
+
+machines:
+
+  # ================================================================ 1. request (수신 코어)
+  - name: request_recipient
+    description: kind=request 메시지의 수신 코어 쪽 수명. remote_turn 머신과 짝을 이룬다
+    initial: pending
+    states:
+      - {name: pending,   terminal: false, visible_to_sender: pending}
+      - {name: accepted,  terminal: false, visible_to_sender: accepted,  desc: 사람이 수락. 전달은 비동기}
+      - {name: queued,    terminal: false, visible_to_sender: accepted,  desc: 세션 dead/busy, 앞 원격 턴 진행 중, 설정 검증 실패, 마커 쓰기 실패 중 하나로 대기 (내부)}
+      - {name: injected,  terminal: false, visible_to_sender: accepted,  desc: 어댑터가 세션에 넘김 (내부). remote_turn 은 remote_unbound}
+      - {name: consumed,  terminal: false, visible_to_sender: consumed,  desc: 세션 입력에서 헤더 토큰 관측 = 세션이 처리 시작(받는 쪽 원격 턴은 bound)}
+      - {name: drafted,   terminal: false, visible_to_sender: consumed,  desc: 초안 모드. 세션의 reply 를 코어가 가로채 사람 검토 대기 (내부)}
+      - {name: replied,   terminal: true,  visible_to_sender: replied}
+      - {name: rejected,  terminal: true,  visible_to_sender: rejected}
+      - {name: aborted,   terminal: true,  visible_to_sender: aborted,   carries: abort_reason, desc: 회신 없이 끝남. abort_reason 에 따라 늦은 회신 허용 여부가 다르다}
+      - {name: discarded, terminal: true,  visible_to_sender: aborted,   desc: 초안을 사람이 버림. 발신자에게는 aborted(reason=draft_discarded)}
+      - {name: expired,   terminal: true,  visible_to_sender: expired}
+      - {name: failed,    terminal: false, visible_to_sender: failed,    desc: 전달 불가(reason 필수, 발신자에게는 reason 없이 상태만). 사람의 retry 로만 벗어남}
+      - {name: held,      terminal: false, desc: "서명은 맞지만 아직 확인하지 않은(pending) 발신 기기에서 옴(#313 E2E). 들어오는 전이 없음 — 코어가 받을 때 이 상태로 만든다. pending 앞 단계. visible_to_sender 없음 = 발신자에게 status 를 보내지 않는다(발신자는 서버의 received 까지만 본다). 카드·주입 없음"}
+      - {name: withdrawn, terminal: true,  visible_to_sender: withdrawn, desc: "보낸 사람이 수락 전에 거둠(묶음 14 #403). 본문은 로컬에서 지운다(행은 '거둬진 요청' 기록 줄로 남음). 세션에 들어간 적 없음"}
+      - {name: done,      terminal: true,  visible_to_sender: done,      desc: "답이 필요 없는 request(no_reply, #598 ②)를 세션이 처리하고 회신 없이 턴이 끝남. 사람 알림 없음. 늦은 회신은 aborted(turn_ended) 와 같은 꼴로 받는다"}
+      - {name: unreadable, terminal: true, desc: "봉투에 이 기기 앞 항목이 없어 열 수 없음(#313 E2E). 들어오는 전이 없음 — 코어가 받을 때 이 상태로 만든다. visible_to_sender 없음 = 발신자에게 status 를 보내지 않는다. 세션 주입 없음. delivered_ack 는 보낸다"}
+    abort_reasons: [turn_ended, owner_aborted, session_exited, mode_escalated, draft_discarded, needs_task]
+    guard_inputs:
+      hooks_config_verified: [true, false]     # 전달 직전 설정 검증 (security §3.4)
+      remote_turn_free:      [true, false]     # 그 세션의 remote_turn == local
+      marker_write:          [ok, failed]
+      draft_mode:            [true, false]
+      abort_reason:          [turn_ended, owner_aborted, session_exited, mode_escalated, draft_discarded, needs_task]
+      replied_by:            [agent, human]    # 마지막으로 보낸 회신의 작성자(#602) — send_reply_author_human·send_late_reply_author_human 이면 human, 나머지는 agent
+      no_reply:              [true, false]     # 받은 request 에 no_reply 가 실렸다(#598 ② — 보낸 세션이 답 필요 없음을 고름)
+    events:
+      - human_accept
+      - human_accept_draft
+      - policy_accept               # 코어 자동 수락(묶음 24 §1 — 가드 1~5 는 코어가 판정, yaml 은 전이만)
+      - policy_hold                 # 자동으로 넘긴 것이 전달 직전 재검사(§1)에 어긋남 → 다시 카드. 사람이 고른 수락에는 부르지 않는다
+      - human_reject
+      - human_reply_direct
+      - human_retry
+      - human_abort                 # UI "원격 처리 중단"
+      - human_send_draft
+      - human_discard_draft
+      - session_live_idle           # 레지스트리: live && idle (전달 시도 트리거)
+      - adapter_inject_fail         # reason: not-live|busy|channel-gone|spawn-failed
+      - adapter_inject_unknown      # 전송 성공 여부 불명
+      - prompt_consumed             # derived: remote_turn 의 bind_prompt_id (헤더 토큰 일치)
+      - consume_timeout             # injected 뒤 2분 prompt_consumed 없음
+      - late_submit                 # derived(#619 ③): 제출 확인이 없어 대기열로 돌린 뒤 그 dtok 의 제출이 늦게 옴(remote_turn record_consumed 가 accepted·queued 인 메시지를 가리킴)
+      - tool_reply                  # 세션의 reply 도구 호출 (msg_id 일치, 회신 검토 통과 후)
+      - turn_ended_no_reply         # derived: remote_turn 이 remote_bound → local 로 stop(prompt_id_match=true)·prompt_submitted(token_match=false, no_header_confirmed) 전이했고 tool_reply 기록 없음
+      - turn_interrupted            # derived: remote_turn 의 turn_interrupted(사람이 Esc — 소유자 개입, 묶음 26 §3-5). 이미 회신했으면(replied) 행이 없어 그대로
+      - turn_ended_needs_task       # derived: turn_ended_no_reply 와 같은 때, 그 턴에 메시지 등급 때문에 쓰기·Bash 가 거부됐다(묶음 26 §5 — 코어가 needs_task 표시를 보고 이쪽을 고른다)
+      - session_exited              # derived: remote_turn 의 session_end·session_clear·app_restart(session_alive=false) 전이, reply 없음
+      - mode_escalated              # derived: remote_turn 의 set_escalated 액션
+      - clock_expired               # Clock >= expires_at
+      - sender_device_trusted       # 사람이 발신 기기를 확인(CmdTrustDevice, #313) — held 인 것만
+      - sender_withdrew             # 같은 발신 사용자의 system withdrawn(reply_to = 이 request, 묶음 14 #403). 코어가 from.user 를 대조한 뒤
+      - clock_tick
+    transitions:
+      # --- pending
+      - {from: pending,  event: human_accept,        to: accepted,  actions: [notify_sender_status]}
+      - {from: pending,  event: human_accept_draft,  to: accepted,  actions: [set_draft_mode, notify_sender_status]}
+      - {from: pending,  event: policy_accept,       to: accepted,  actions: [notify_sender_status]}
+      - {from: pending,  event: human_reject,        to: rejected,  actions: [send_rejected_to_sender, notify_sender_status]}
+      - {from: pending,  event: human_reply_direct,  to: replied,   actions: [send_reply_author_human, notify_sender_status]}
+      - {from: pending,  event: clock_expired,       to: expired,   actions: [send_system_expired_to_sender, notify_sender_status]}
+      # --- accepted / queued : 전달 시도 (가드 상호 배타, 네 행이 입력 공간을 덮는다)
+      - from: [accepted, queued]
+        event: session_live_idle
+        guard: {hooks_config_verified: false}
+        to: queued
+        actions: [demote_session_private, notify_owner_hooks_missing]
+      - from: [accepted, queued]
+        event: session_live_idle
+        guard: {hooks_config_verified: true, remote_turn_free: false}
+        to: queued
+        actions: [log_serialized_wait]
+      - from: [accepted, queued]
+        event: session_live_idle
+        guard: {hooks_config_verified: true, remote_turn_free: true, marker_write: failed}
+        to: queued
+        actions: [notify_owner_marker_error]
+      - from: [accepted, queued]
+        event: session_live_idle
+        guard: {hooks_config_verified: true, remote_turn_free: true, marker_write: ok}
+        to: injected
+        actions: [record_transition_injected, remote_turn.deliver_decided, adapter_send]   # 기록 → 마커(remote_turn) → 전송
+      - {from: [accepted, queued], event: adapter_inject_fail, to: queued}
+      # #619 ③: '지금 넣기' 뒤 확인이 없어 돌린 글이 실제로는 제출됐다(일하는 중 친 입력은 턴 끝에 제출 — hook 이 늦음). 원격 턴에 묶였으니 대기열에서 빼고 다시 넣지 않는다
+      - {from: [accepted, queued], event: late_submit, to: consumed, actions: [notify_sender_status]}
+      # 보낸 쪽은 accepted 그대로(sender_view rank 상 pending 은 어차피 무시) — 사람이 카드에서 거절·수락하면 자연히 맞는다(10-27 결정)
+      - {from: [accepted, queued], event: policy_hold,         to: pending}
+      - {from: [accepted, queued], event: human_abort,         to: aborted, actions: [set_abort_reason: owner_aborted, notify_sender_status]}
+      - {from: [accepted, queued], event: clock_expired,       to: expired, actions: [send_system_expired_to_sender, notify_sender_status]}
+      # #602(a) 내 에이전트에게 온 요청에 내가 직접 답함 — 돌고 있는 턴은 끊지 않고, 에이전트 답만 막는다(아래 replied_by: human)
+      - {from: [accepted, queued, injected, consumed], event: human_reply_direct, to: replied, actions: [send_reply_author_human, notify_sender_status]}
+      # --- injected
+      - {from: injected, event: adapter_inject_fail,    to: queued,   actions: [remote_turn.inject_failed]}
+      - {from: injected, event: adapter_inject_unknown, to: failed,   actions: [set_reason: unknown-delivery, remote_turn.inject_unknown, notify_owner, notify_sender_status]}   # #257: 본문이 입력창에 남을 수 있다 — 마커를 남긴다
+      - {from: injected, event: prompt_consumed,        to: consumed, actions: [notify_sender_status]}
+      - {from: injected, event: tool_reply, guard: {draft_mode: false}, to: replied, actions: [send_reply_author_agent, notify_sender_status]}   # S3 직행
+      - {from: injected, event: tool_reply, guard: {draft_mode: true},  to: drafted, actions: [hold_reply_show_draft_ui]}
+      - {from: injected, event: consume_timeout,        to: failed,   actions: [set_reason: unknown-delivery, remote_turn.inject_unknown, notify_owner, notify_sender_status]}   # #316: 붙여 넣었는데 제출됐는지 모름 = 전달 불명(adapter_inject_unknown 과 같음). dtok 등록은 남긴다
+      - {from: injected, event: session_exited,         to: aborted,  actions: [set_abort_reason: session_exited, notify_owner, notify_sender_status]}
+      - {from: injected, event: mode_escalated,         to: aborted,  actions: [set_abort_reason: mode_escalated, notify_owner, notify_sender_status]}
+      - {from: injected, event: human_abort,            to: aborted,  actions: [set_abort_reason: owner_aborted, remote_turn.owner_abort, notify_session_system, notify_sender_status]}
+      - {from: injected, event: clock_expired,          to: expired,  actions: [send_system_expired_to_sender, notify_sender_status]}
+      # --- consumed
+      - {from: consumed, event: tool_reply, guard: {draft_mode: false}, to: replied, actions: [send_reply_author_agent, notify_sender_status]}
+      - {from: consumed, event: tool_reply, guard: {draft_mode: true},  to: drafted, actions: [hold_reply_show_draft_ui]}
+      - {from: consumed, event: turn_ended_no_reply, guard: {no_reply: false}, to: aborted, actions: [set_abort_reason: turn_ended, notify_owner, notify_sender_status]}
+      - {from: consumed, event: turn_ended_no_reply, guard: {no_reply: true},  to: done,    actions: [notify_sender_status]}   # #598 ② — 답이 필요 없던 글이라 사람 알림 없음
+      - {from: consumed, event: turn_ended_needs_task,  to: aborted,  actions: [set_abort_reason: needs_task, notify_owner, notify_sender_status]}   # 묶음 26 §5 — 보낸 세션이 task 로 다시 보낸다(앱은 자동으로 다시 보내지 않음)
+      - {from: consumed, event: session_exited,         to: aborted,  actions: [set_abort_reason: session_exited, notify_owner, notify_sender_status]}
+      - {from: consumed, event: mode_escalated,         to: aborted,  actions: [set_abort_reason: mode_escalated, notify_owner, notify_sender_status]}
+      - {from: consumed, event: human_abort,            to: aborted,  actions: [set_abort_reason: owner_aborted, remote_turn.owner_abort, notify_session_system, notify_sender_status]}
+      - {from: consumed, event: turn_interrupted,       to: aborted,  actions: [set_abort_reason: owner_aborted, notify_sender_status]}   # 묶음 26 §3-5 — Esc 는 사람이 끊은 것: human_abort 와 같은 사유·보낸 쪽 통지, 세션엔 넣지 않음(사람이 그 터미널에 있다)
+      - {from: consumed, event: clock_expired,          to: expired,  actions: [send_system_expired_to_sender, notify_sender_status]}
+      # --- drafted
+      - {from: drafted,  event: human_send_draft,    to: replied,   actions: [send_reply_author_human_assisted, notify_sender_status]}
+      - {from: drafted,  event: human_discard_draft, to: discarded, actions: [notify_session_system_draft_discarded, notify_sender_status_aborted_draft_discarded]}
+      - {from: drafted,  event: clock_expired,       to: expired,   actions: [send_system_expired_to_sender, notify_owner, notify_sender_status]}
+      - {from: drafted,  event: human_reply_direct,  to: replied,   actions: [send_reply_author_human, notify_sender_status]}   # 초안 대신 내가 씀 — 초안은 버린다(세션 통지 없음, #602)
+      # --- failed (휴지)
+      - {from: failed,   event: human_retry,         to: queued,    actions: [clear_reason, notify_sender_status_accepted]}
+      - {from: failed,   event: human_reject,        to: rejected,  actions: [send_rejected_to_sender, notify_sender_status]}
+      - {from: failed,   event: human_reply_direct,  to: replied,   actions: [send_reply_author_human, notify_sender_status]}
+      - {from: failed,   event: clock_expired,       to: expired,   actions: [send_system_expired_to_sender, notify_sender_status]}
+      # --- held (#313: 확인 안 한 기기에서 온 request. 거절 명령은 없다 — 끝은 확인 아니면 만료)
+      - {from: held,     event: sender_device_trusted, to: pending, actions: [notify_sender_status]}
+      - {from: held,     event: clock_expired,       to: expired,   actions: [send_system_expired_to_sender, notify_sender_status]}
+      # --- 거두기(묶음 14 #403): 수락 전(held·pending)에만. 수락 뒤 온 것은 무시하고 status 를 보내지 않는다(경합에서 수락이 이김)
+      - {from: [held, pending], event: sender_withdrew, to: withdrawn, actions: [drop_body, notify_sender_status]}
+      - {from: [accepted, queued, injected, consumed, drafted, failed, replied, rejected, aborted, discarded, expired, unreadable, withdrawn, done], event: sender_withdrew, to: same, actions: [log_ignored]}
+      # --- 종료 상태 예외 (상태 불변)
+      - {from: replied,  event: tool_reply, guard: {replied_by: [agent]}, to: same, actions: [send_supplemental_reply]}     # 보충 회신 (회신 검토 거침)
+      - {from: replied,  event: tool_reply, guard: {replied_by: [human]}, to: same, actions: [hold_withheld_reply, tool_error_to_session]}   # 내가 이미 직접 답함(#602) — 에이전트 답은 이 기기에만 남긴다
+      - {from: aborted,  event: tool_reply, guard: {abort_reason: [turn_ended, needs_task], replied_by: [agent]}, to: same, actions: [send_late_reply]}        # Esc·StopFailure 뒤 늦은 회신 허용 (D). needs_task 는 turn_ended 의 갈래(묶음 26 §5)
+      - {from: aborted,  event: tool_reply, guard: {abort_reason: [turn_ended, needs_task], replied_by: [human]}, to: same, actions: [hold_withheld_reply, tool_error_to_session]}   # 끝난 뒤 내가 답함(#602)
+      - {from: aborted,  event: human_reply_direct, guard: {abort_reason: [turn_ended, needs_task]}, to: same, actions: [send_late_reply_author_human]}   # 에이전트가 답 없이 끝낸 것에 내가 답함 — 늦은 회신과 같은 꼴, 작성자 human(#602)
+      - {from: aborted,  event: human_reply_direct, guard: {abort_reason: [owner_aborted, session_exited, mode_escalated, draft_discarded]}, to: same, actions: [log_ignored]}   # 늦은 회신을 받지 않는 중단 — 코어는 bad_state
+      - {from: aborted,  event: tool_reply, guard: {abort_reason: [owner_aborted, session_exited, mode_escalated, draft_discarded]}, to: same, actions: [log_ignored_reply, tool_error_to_session]}
+      # --- done(#598 ②): 답이 필요 없다 했어도 늦게 답하면 받는다 — aborted(turn_ended) 와 같은 꼴(#602 가드 포함)
+      - {from: done,     event: tool_reply, guard: {replied_by: [agent]}, to: same, actions: [send_late_reply]}
+      - {from: done,     event: tool_reply, guard: {replied_by: [human]}, to: same, actions: [hold_withheld_reply, tool_error_to_session]}
+      - {from: done,     event: human_reply_direct, to: same, actions: [send_late_reply_author_human]}
+      - {from: [rejected, expired, discarded, unreadable, withdrawn], event: tool_reply, to: same, actions: [log_ignored_reply, tool_error_to_session]}
+      - {from: [pending, accepted, queued, injected, consumed, drafted, replied, rejected, aborted, discarded, expired, failed, held, unreadable, withdrawn, done], event: clock_tick, to: same}
+      # 그 외 (예: expired + human_accept) 는 legend 의 기본 무시 규칙. 코어는 무시 로그를 보고 UI 에 "만료됨" 을 띄운다
+    invariants:
+      - rejected/expired/discarded/withdrawn 과 aborted(reason ∉ {turn_ended, needs_task}) 메시지는 어떤 이벤트로도 세션에 전달되거나 회신이 나가지 않는다
+      - 같은 msg_id 가 injected 로 두 번 전이되는 일은 없다(record_transition_injected 가 먼저, 실패 시 queued, 불명 시 failed)
+      - pending → accepted 는 human_accept·human_accept_draft·policy_accept 뿐이다. policy_accept·policy_hold 는 코어 판정(묶음 24 §1, ADR 0013 — 옛 AC-AR-8 대체)
+      - 종료 상태에서 빠져나오는 전이는 없다(failed 는 종료 상태가 아니다)
+      - injected 상태인 메시지가 있으면 그 세션의 remote_turn 은 local 이 아니다 (P3)
+      - held·unreadable 메시지는 세션에 전달되지 않고 발신자에게 그 상태가 노출되지 않는다(#313). held 는 sender_device_trusted 로만 평소 흐름(pending)에 들어간다
+      - replied_by=human 인 request 에는 세션의 회신이 나가지 않는다(#602)
+
+  # ================================================================ 2. request (발신자에게 보이는 상태)
+  - name: request_sender_view
+    description: >
+      발신 코어·UI 가 보는 상태. 서버 status 프레임과 자기 send 결과로만 전이.
+      rank 규칙: 수신한 status 의 rank 가 현재보다 높으면 직접 적용(건너뛴 전이 보간), 같거나 낮으면 무시+기록.
+      종료 상태(rank 90)끼리는 먼저 온 것이 이긴다. failed(rank 50) 는 비종료이며 이후 더 높은 rank 가 오면 적용된다.
+      예외(#591): aborted(rank 90)는 비종료다 — 늦은 회신 사유(turn_ended·needs_task)일 때 status_replied 로만 replied 로 간다
+      (늦게 답함 = replied + abort_reason 남김). 그 밖의 이벤트·사유는 종료 상태처럼 무시한다.
+    initial: sent
+    status_rule: higher_rank_applies_lower_or_equal_ignored
+    states:
+      - {name: sent,     rank: 0,  terminal: false}
+      - {name: stored,   rank: 10, terminal: false, desc: 서버 ack}
+      - {name: received, rank: 20, terminal: false, desc: 상대 기기 코어가 받음}
+      - {name: pending,  rank: 30, terminal: false}
+      - {name: accepted, rank: 40, terminal: false}
+      - {name: failed,   rank: 50, terminal: false, desc: 서버 nack 또는 상대 코어 failed. reason 은 발신자에게 전달하지 않는다(F5)}
+      - {name: consumed, rank: 60, terminal: false}
+      - {name: replied,  rank: 90, terminal: true}
+      - {name: rejected, rank: 90, terminal: true}
+      - {name: aborted,  rank: 90, terminal: false, carries: abort_reason, desc: "거절 아님. 표시는 \"중단(미완료)\". abort_reason 범주만 전달. 비종료지만 늦은 회신 사유(turn_ended·needs_task)일 때 status_replied 로만 replied 로 간다(#591 — 늦게 답함, abort_reason 은 지우지 않는다)"}
+      - {name: expired,  rank: 90, terminal: true}
+      - {name: done,     rank: 90, terminal: false, desc: "받는 쪽이 답 없이 처리를 마침(no_reply, #598 ②). 표시는 '전달됨' 류(실패 아님, 디자인 결정). aborted(#591)처럼 비종료 — status_replied(늦은 답)로만 replied 로 간다. rank 행 from 에 넣지 않는다"}
+      - {name: withdrawn, rank: 90, terminal: true, desc: "보낸 사람이 거둠(묶음 14 #403). 받는 쪽이 수락 전(held·pending)에 받아 status withdrawn 을 보냈을 때만. accepted 와 서로 배타 — rank 규칙이 아니라 아래 명시 행(먼저 온 것이 이김)"}
+    guard_inputs:
+      send_fail_retryable:          [true, false]   # #447: send_fail 이 stale_devices·internal·device_unconfirmed·upload_quota·upload_storage·upload_failed(묶음 15)·recipient_device_changed(#577) 이고 expires_at 이 안 지남
+      send_fail_device_unconfirmed: [true, false]   # #447 S5: send_fail == device_unconfirmed 이고 expires_at 이 안 지남
+      send_fail_recipient_device_changed: [true, false]   # #577 §9 ②: send_fail == recipient_device_changed 이고 expires_at 이 안 지남
+      abort_reason: [turn_ended, needs_task, owner_aborted, session_exited, mode_escalated, draft_discarded, none]   # #591: aborted 의 사유(none = 사유 없이 온 aborted)
+    events: [server_ack, server_nack, server_device_received, status_pending, status_accepted, status_consumed, status_failed, status_replied, status_rejected, status_aborted, status_expired, local_expired, clock_tick, human_retry, device_trusted, recipient_rejoined, status_withdrawn, status_done]
+    event_target: {server_ack: stored, server_nack: failed, server_device_received: received, status_pending: pending, status_accepted: accepted, status_failed: failed, status_consumed: consumed, status_replied: replied, status_rejected: rejected, status_aborted: aborted, status_expired: expired, local_expired: expired, status_done: done}
+    transitions:
+      # 생성 규칙: 비종료 상태 s 와 이벤트 e 에 대해 rank(event_target[e]) > rank(s) 면 to = event_target[e], 아니면 무시(log_ignored). 예외: server_nack 은 sent 에서만 적용.
+      - {rule: rank, from: [sent, stored, received, pending, accepted, failed, consumed], event: [server_ack, server_device_received, status_pending, status_accepted, status_failed, status_consumed, status_replied, status_rejected, status_aborted, status_expired, local_expired, status_done]}
+      - {from: sent, event: server_nack, to: failed}
+      - {from: [stored, received, pending, accepted, failed, consumed], event: server_nack, to: same, actions: [log_ignored]}
+      - {from: [replied, rejected, expired, withdrawn], event: [server_ack, server_nack, server_device_received, status_pending, status_accepted, status_failed, status_consumed, status_replied, status_rejected, status_aborted, status_expired, local_expired, status_done], to: same, actions: [log_ignored]}
+      # --- 늦게 답함(#591): aborted 는 비종료지만 rank 행에 넣지 않는다 — 늦은 회신 사유의 status_replied 만 replied 로(받는 쪽 :144 와 같은 둘).
+      - {from: aborted, event: [server_ack, server_nack, server_device_received, status_pending, status_accepted, status_failed, status_consumed, status_rejected, status_aborted, status_expired, local_expired, status_done], to: same, actions: [log_ignored]}
+      - {from: aborted, event: status_replied, guard: {abort_reason: [turn_ended, needs_task]}, to: replied}
+      - {from: aborted, event: status_replied, guard: {abort_reason: [owner_aborted, session_exited, mode_escalated, draft_discarded, none]}, to: same, actions: [log_ignored]}
+      # --- done(#598 ②): aborted(#591) 꼴 — 늦은 답(status_replied)만 replied 로, 나머지는 무시
+      - {from: done, event: status_replied, to: replied}
+      - {from: done, event: [server_ack, server_nack, server_device_received, status_pending, status_accepted, status_failed, status_consumed, status_rejected, status_aborted, status_expired, local_expired, status_done], to: same, actions: [log_ignored]}
+      # --- 거두기(묶음 14 #403): 수락 전에만. accepted 이후에 온 withdrawn 은 무시(경합에서 수락이 이김), withdrawn 뒤의 accepted 도 위 행에서 무시.
+      - {from: [sent, stored, received, pending], event: status_withdrawn, to: withdrawn}
+      - {from: [accepted, failed, consumed, replied, rejected, aborted, expired, withdrawn, done], event: status_withdrawn, to: same, actions: [log_ignored]}
+      - {from: [sent, stored, received, pending, accepted, failed, consumed, replied, rejected, aborted, expired, withdrawn, done], event: clock_tick, to: same}
+      # --- 다시 보내기(#447 send-failures §5, 설계 c9f9bb01): 같은 msg_id 의 평문을 다시 큐에(봉투는 relay-client 가 새로).
+      #     받는 쪽 StatusFailed(R8)로 온 failed 는 send_fail 이 없어 걸리지 않는다. 누가 다시 보냈는지 message_events 에 남도록 이벤트를 나눈다.
+      - {from: failed, event: human_retry,    guard: {send_fail_retryable: true},           to: sent, actions: [requeue_send]}
+      - {from: failed, event: human_retry,    guard: {send_fail_retryable: false},          to: same, actions: [log_ignored]}
+      - {from: failed, event: device_trusted, guard: {send_fail_device_unconfirmed: true},  to: sent, actions: [requeue_send]}   # S5 기기 확인 뒤 자동
+      - {from: failed, event: device_trusted, guard: {send_fail_device_unconfirmed: false}, to: same, actions: [log_ignored]}
+      # 받는 사람이 기기를 바꾸는 사이 옛 기기에만 간 글(#577 §9 ② — relay status{failed, fail_reason: recipient_device_changed}):
+      # 그 사람의 새 잎이 그 pair·group 에 생기면 저절로 한 번 다시.
+      - {from: failed, event: recipient_rejoined, guard: {send_fail_recipient_device_changed: true},  to: sent, actions: [requeue_send]}
+      - {from: failed, event: recipient_rejoined, guard: {send_fail_recipient_device_changed: false}, to: same, actions: [log_ignored]}
+      - {from: [sent, stored, received, pending, accepted, consumed, replied, rejected, aborted, expired, withdrawn, done], event: [human_retry, device_trusted, recipient_rejoined], to: same, actions: [log_ignored]}
+    invariants:
+      - queued/injected/drafted 가 발신자에게 노출되지 않는다
+      - 종료 상태에서 빠져나오지 않는다
+      - aborted 는 비종료지만 늦은 회신 사유(turn_ended·needs_task)일 때 status_replied 로만 replied 로 간다(#591). 그 밖에는 빠져나오지 않는다
+      - done 은 비종료지만 status_replied(늦은 답)로만 replied 로 간다(#598 ②). 그 밖에는 빠져나오지 않는다
+      - failed 의 reason 은 발신자에게 가지 않는다
+
+  # ================================================================ 3. 서버 봉투 + 회신 수락 판정
+  - name: envelope_server
+    description: >
+      중계 서버가 보관하는 원 메시지(request) 의 봉투와, reply_to 검증에 쓰는 발신자 뷰 상태 추적(F4).
+      보관은 기기 단위다(protocol §7.2-6): 저장 때 받는 사용자의 폐기되지 않은 기기 전부가 전달 대상이고, 서버는 본문을
+      대상 기기가 모두 ack 했거나(기기 폐기로 대상에서 빠진 것 포함) 만료될 때 지운다. 헤더 + sender_view_state 는 expires_at 까지 보관한다.
+    initial: stored
+    states:
+      - {name: stored,          terminal: false}
+      - {name: device_received, terminal: false, desc: 첫 수신 기기 delivered_ack(발신자 received). 본문은 대상 기기 모두 ack 때 삭제, 헤더 보관}
+      - {name: expired,         terminal: true,  desc: expires_at 경과. 헤더 삭제}
+    tracked: {sender_view_state: request_sender_view.states, abort_reason: request_recipient.abort_reasons}
+    reply_accept_rule:   # protocol §7.2-4 ③. kind=reply 만 적용. rejected/system 은 적용하지 않는다
+      accept_when_sender_view_in: [pending, accepted, consumed, replied, done]   # done(#598 ②) — 답 필요 없다 했어도 늦은 답은 받는다
+      accept_when_aborted_reason_in: [turn_ended, needs_task]   # needs_task 는 turn_ended 의 갈래(묶음 26 §5) — 선에 싣는 것은 PROTOCOL 8(22)부터
+      refuse_otherwise: true   # rejected, expired, failed, aborted(owner_aborted|session_exited|mode_escalated|draft_discarded), 헤더 없음
+    events: [device_ack, status_frame, clock_expired, clock_tick, withdraw]
+    transitions:
+      - {from: stored,          event: device_ack,    to: device_received, actions: [mark_device_acked, drop_body_when_all_acked]}
+      - {from: device_received, event: device_ack,    to: same, actions: [mark_device_acked, drop_body_when_all_acked]}
+      - {from: [stored, device_received], event: status_frame, to: same, actions: [update_sender_view_state_by_rank]}
+      - {from: [stored, device_received], event: clock_expired, to: expired, actions: [delete_header, notify_sender_status_expired]}
+      - {from: expired, event: [device_ack, status_frame], to: same, actions: [log_ignored]}
+      # 거두기·고치기(묶음 14 #403·#404): 같은 발신 사용자의 system withdrawn·chat edits 가 이 봉투를 가리킴 → 아직 받지 않은 기기 몫을 지운다
+      # (그 기기에는 원 메시지를 전달하지 않음). 남은 대상이 없으면 본문도 지운다. 헤더는 expires_at 까지(같은 msg_id 재생 거부·reply_to 대조).
+      - {from: [stored, device_received], event: withdraw, to: same, actions: [drop_unacked_devices]}
+      - {from: expired, event: withdraw, to: same, actions: [log_ignored]}
+      - {from: [stored, device_received, expired], event: clock_tick, to: same}
