@@ -1,0 +1,31 @@
+[package]
+name = "lodelai-crypto"
+description = "lodelai 기기 키·Ed25519 서명·X25519 키·JCS(RFC 8785)·KeyStore (U1b, #53). core·protocol 타입에 의존하지 않는다"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_json_canonicalizer = "0.4"
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+sha2 = "0.10"
+# E2E 봉투(#313, 설계 e2e-envelope.md §3.5) — 스파이크 #245 와 같은 버전.
+chacha20poly1305 = { version = "0.10", features = ["stream"] }
+subtle = "2"
+base64 = "0.22"
+zeroize = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+hex = "0.4"
+
+[lints]
+workspace = true

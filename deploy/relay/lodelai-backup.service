@@ -1,0 +1,25 @@
+# lodelai 서버 DB 매일 사본 → 백업 폴더(최근 7개) → R2(설정돼 있으면). 타이머 lodelai-backup.timer.
+# 쓰는 경로(ReadWritePaths)는 설치마다 달라 install.sh 가 lodelai-backup.service.d/paths.conf 에 둔다.
+[Unit]
+Description=lodelai relay DB backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=lodelai
+Group=lodelai
+EnvironmentFile=-/etc/lodelai/backup.env
+ExecStart=/opt/lodelai/bin/lodelai-backup
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+CapabilityBoundingSet=

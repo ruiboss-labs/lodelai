@@ -1,0 +1,28 @@
+[package]
+name = "lodelai-statechart"
+description = "machines/wire.yaml(선 머신)에서 생성한 상태·이벤트·가드·액션 enum 과 순수 전이 함수, 그리고 같은 꼴을 만드는 생성기(feature gen). relay·relay-client·앱이 공유한다 (U2, #54·#559)"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_yaml_ng = { version = "0.10.0", optional = true }
+
+[features]
+# yaml 모델(파서·검증·펼치기)을 라이브러리로도 노출한다. 시험·도구용. 제품 코드는 생성된 enum 만 쓴다.
+model = ["dep:serde_yaml_ng"]
+# 생성기(gen::generate)를 라이브러리로 노출한다. 앱 머신 크레이트의 build-dependency 용(#559).
+gen = ["model"]
+
+[build-dependencies]
+serde_yaml_ng = "0.10.0"
+
+[dev-dependencies]
+lodelai-testkit = { path = "../testkit" }
+serde_yaml_ng = "0.10.0"
+
+[lints]
+workspace = true

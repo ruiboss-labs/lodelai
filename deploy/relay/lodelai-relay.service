@@ -1,0 +1,41 @@
+# lodelai 서버(relay). 설치는 deploy/relay/install.sh, 운영은 SELF-HOSTING.md.
+# 127.0.0.1:8787 에만 묶인다. 바깥은 Caddy·Cloudflare Tunnel·운영자 프록시가 잇는다(relay 는 TLS 를 하지 않는다). 포트를 열지 않는다.
+[Unit]
+Description=lodelai relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lodelai
+Group=lodelai
+# 설정은 /etc/lodelai/relay.env 의 env 로만 넘긴다(묶음 29 §1-3): LODELAI_RELAY_DATA·LODELAI_PUBLIC_HOST·LODELAI_BEHIND_CLOUDFLARE·
+# LODELAI_MAIL…·LODELAI_PRIVACY_VERSION·LODELAI_PRIVACY_URL. 필수 값이 비면 install.sh 가 먼저 막고, relay 도 뜨지 않는다.
+# 쓰는 경로(ReadWritePaths)는 설치마다 달라 install.sh 가 lodelai-relay.service.d/paths.conf 에 둔다.
+EnvironmentFile=/etc/lodelai/relay.env
+ExecStart=/opt/lodelai/bin/lodelai-relay --port 8787
+Restart=always
+RestartSec=2
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
