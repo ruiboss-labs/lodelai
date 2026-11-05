@@ -1,0 +1,29 @@
+[package]
+name = "lodelai-protocol-gen"
+description = "선 스키마(packages/protocol/schema) → crates/protocol/src/generated (typify), states.schema.json(statechart), fixtures 재서명 (U1, #52). 생성 부품은 라이브러리로도 쓴다"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "lodelai-protocol-gen"
+path = "src/main.rs"
+
+[dependencies]
+# 생성물이 바이트 단위로 안정적이어야 CI diff 검사가 의미 있다 → 정확한 버전 고정.
+typify = { version = "=0.8.0", default-features = false }
+schemars = "0.8"
+prettyplease = "0.2"
+syn = "2"
+serde_json = { workspace = true, features = ["preserve_order"] }
+sha2 = "0.10"
+lodelai-crypto = { path = "../crypto" }
+lodelai-statechart = { path = "../statechart" }
+
+[lints]
+workspace = true
