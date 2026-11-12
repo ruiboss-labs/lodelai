@@ -1,0 +1,3958 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ws.schema.json",
+  "title": "중계 서버 WebSocket 프레임 — protocol.md §7",
+  "$defs": {
+    "Hello": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "hello"
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "보내는 앱의 판(PROTOCOL_VERSION). relay 가 받는 범위 [PROTOCOL_MIN, PROTOCOL_VERSION] 밖이면 error{version_unsupported, min, max}(묶음 22 §12-24) — 그래서 const 가 아니다"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+        },
+        "no_duty": {
+          "type": "boolean",
+          "description": "모바일 검증(시험 relay 만): true 면 이 연결의 기기를 duty(기기 넣기·다시 들기 Commit) 후보에서 뺀다 — 늘 붙어 있지 않는 휴대폰이 rank 0 을 받고 백그라운드로 가 다른 후보를 기다리게 하지 않게. 앱은 lodelai-features 에 no_duty 가 있을 때만 싣는다(옛 relay 는 모르는 칸을 거절)"
+        },
+        "look": {
+          "type": "boolean",
+          "description": "#874: true 면 이 연결은 디렉터리 사람 항목의 look 을 안다 — relay 는 이것 없이 붙은 연결엔 look 을 빼고 보낸다(옛 앱 생성 타입은 모르는 칸을 거절). 앱은 lodelai-features 에 look 이 있을 때만 싣는다. PROTOCOL_VERSION 이 오른 뒤에도 같은 뜻"
+        },
+        "own": {
+          "type": "boolean",
+          "description": "#870·#872: true 면 이 기기는 내 기기끼리 글(kind own_control·own_control_result·own_delete)과 own_stream 을 안다 — relay 는 마지막으로 이것을 싣고 붙은 기기에만 그 글을 전하고(쌓지도 않음), 이 연결에만 own_stream 을 넘긴다. 앱은 lodelai-features 에 own_control 이 있을 때만 싣는다(옛 relay 는 모르는 칸을 거절). PROTOCOL_VERSION 이 OWN_CONTROL_PROTOCOL 로 오른 뒤에도 같은 뜻"
+        },
+        "contacts": {
+          "type": "boolean",
+          "description": "#845: true 면 이 연결은 연락처(link.*·디렉터리 links·link_requests)를 안다 — relay 는 이것 없이 붙은 연결엔 디렉터리의 links·link_requests 를 빼고 보낸다(옛 앱 생성 타입은 모르는 칸을 거절). 앱은 lodelai-features 에 contacts 가 있을 때만 싣는다. PROTOCOL_VERSION 이 오른 뒤에도 같은 뜻"
+        },
+        "mutes": {
+          "type": "boolean",
+          "description": "#845 §7-56: true 면 이 연결은 디렉터리 mutes 를 안다 — relay 는 이것 없이 붙은 연결엔 mutes 를 빼고 보낸다(옛 앱은 최상위 모르는 칸을 거절). 앱은 lodelai-features 에 mutes 가 있을 때만 싣는다"
+        },
+        "pins": {
+          "type": "boolean",
+          "description": "#880: true 면 이 연결은 디렉터리 pins 를 안다 — relay 는 이것 없이 붙은 연결엔 pins 를 빼고 보낸다. 앱은 lodelai-features 에 pins 가 있을 때만 싣는다"
+        },
+        "away": {
+          "type": "boolean",
+          "description": "#870 맥 잠듦: true 면 이 연결은 디렉터리 내 기기 항목의 away 를 안다 — relay 는 이것 없이 붙은 연결엔 away 를 빼고 보낸다(옛 앱의 DirectoryDevice 는 모르는 칸을 거절). 앱은 lodelai-features 에 away 가 있을 때만 싣는다"
+        }
+      },
+      "required": ["t", "v", "device_id", "user"],
+      "additionalProperties": false
+    },
+    "PublishProject": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$",
+          "description": "주인 쪽 프로젝트 id(묶음 23 §2a project_id) — 같은 주인 안에서만 뜻이 있다(받는 쪽은 (주인, id) 로 묶음)"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "주인 사이드바와 같은 구분 이름 — 성분을 '/' 로 이음(겹칠 때만 부모 성분). 전체 경로 아님. relay 는 display_name::normalize_project_name(성분마다 normalize_folder + 전체 64자)으로 검사하고 어기면 session.publish 전체 error{protocol}"
+        }
+      },
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "description": "세션의 프로젝트(묶음 23 §5). session.publish 에 선택으로 싣고 relay 가 directory.sessions[].project 로 그대로 싣는다(없으면 옛 앱)"
+    },
+    "Challenge": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "challenge"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "32바이트 난수 base64url 패딩 없음"
+        }
+      },
+      "required": ["t", "nonce"],
+      "additionalProperties": false
+    },
+    "Auth": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "auth"
+        },
+        "sig": {
+          "$ref": "message.schema.json#/$defs/Sig"
+        }
+      },
+      "required": ["t", "sig"],
+      "additionalProperties": false,
+      "description": "base64url(Ed25519(lodelai-auth-v1 ‖ 0x00 ‖ server ‖ 0x00 ‖ device_id ‖ 0x00 ‖ nonce_bytes))"
+    },
+    "Ready": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "ready"
+        },
+        "server": {
+          "type": "string"
+        },
+        "now": {
+          "$ref": "message.schema.json#/$defs/Timestamp"
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "admin": {
+          "type": "boolean",
+          "description": "내가 이 조직의 관리자인가(묶음 5, m1-spec §17.3 — 묶음 4 의 관리자 아이디 문자열을 바꿈). 원격 relay 만 싣는다. 로컬 relay(같은 맥)는 싣지 않는다(그때는 relay 를 띄운 주인 앱이 관리자)"
+        }
+      },
+      "required": ["t", "server", "now", "pending"],
+      "additionalProperties": false
+    },
+    "Send": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "send"
+        },
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "message.schema.json#/$defs/Message"
+            },
+            {
+              "$ref": "message.schema.json#/$defs/MlsHandshakeMessage"
+            }
+          ],
+          "description": "응용 메시지 또는 묶음 22 Handshake(kind mls — relay-client 만 다룸)"
+        }
+      },
+      "required": ["t", "message"],
+      "additionalProperties": false
+    },
+    "Ack": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "ack"
+        },
+        "msg_id": {
+          "$ref": "message.schema.json#/$defs/Ulid"
+        },
+        "group_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "kind group 의 서버 순서(묶음 16, snapshot 제외). 서명 밖 — 클라이언트는 검증하지 않고 순서로만 쓴다"
+        }
+      },
+      "required": ["t", "msg_id"],
+      "additionalProperties": false
+    },
+    "Nack": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "nack"
+        },
+        "msg_id": {
+          "$ref": "message.schema.json#/$defs/Ulid"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "auth",
+            "unroutable",
+            "too_large",
+            "stale_devices",
+            "epoch_taken",
+            "stale_epoch",
+            "invalid_commit",
+            "commit_void",
+            "rate_limited",
+            "blob_unavailable"
+          ]
+        }
+      },
+      "required": ["t", "msg_id", "reason"],
+      "additionalProperties": false,
+      "description": "unroutable 은 모든 경우 바이트 동일 (§7.2-2). stale_devices = 봉투 recipients 에 받는 사용자의 폐기·모르는 기기가 있음(route() 통과 뒤에만 — 라우팅 안 되는 상대는 unroutable). 발신자는 디렉터리를 새로 받아 같은 msg_id 로 한 번 재암호화(e2e-envelope.md §6)"
+    },
+    "Deliver": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "deliver"
+        },
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "message.schema.json#/$defs/Message"
+            },
+            {
+              "$ref": "message.schema.json#/$defs/MlsHandshakeMessage"
+            }
+          ],
+          "description": "응용 메시지 또는 묶음 22 Handshake(kind mls — relay-client 만 다룸)"
+        },
+        "group_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "kind group 의 서버 순서(묶음 16, ack 와 같음)"
+        },
+        "sender_view": {
+          "type": "string",
+          "description": "묶음 22 §7: 보낸 사용자의 다른 기기에 사본을 접속 때 다시 줄 때만 — 그 메시지의 지금 보낸 쪽 상태(request_sender_view 이름). 받는 쪽은 이것으로 '내가 보낸 글' 사본의 첫 상태를 정한다. 없으면 stored"
+        }
+      },
+      "required": ["t", "message"],
+      "additionalProperties": false
+    },
+    "DeliveredAck": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "delivered_ack"
+        },
+        "msg_id": {
+          "$ref": "message.schema.json#/$defs/Ulid"
+        },
+        "unreadable": {
+          "type": "boolean",
+          "description": "0.2.6 #809: true 면 이 기기가 그 글을 열지 못했다(Unreadable — 받은 것으로 적되 보낸 쪽에 received 를 보내지 않고 recipient_unreadable 로 알린다). 까닭 코드는 싣지 않는다. 앱은 lodelai-features 에 unreadable_ack 이 있을 때만 싣는다(옛 relay 는 모르는 칸을 error{protocol} 로 다룸)"
+        }
+      },
+      "required": ["t", "msg_id"],
+      "additionalProperties": false
+    },
+    "Status": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "status"
+        },
+        "msg_id": {
+          "$ref": "message.schema.json#/$defs/Ulid"
+        },
+        "state": {
+          "$ref": "#/$defs/StatusState"
+        },
+        "abort_reason": {
+          "$ref": "states.schema.json#/$defs/AbortReason"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp"
+        },
+        "fail_reason": {
+          "$ref": "message.schema.json#/$defs/FailReason"
+        },
+        "by": {
+          "$ref": "message.schema.json#/$defs/PersonAddress",
+          "description": "S→C 만(묶음 16 §4). 그룹 주소(+gid)로 간 메시지에서 다른 멤버가 보낸 status 일 때만, relay 가 인증한 연결의 사용자로 채운다. C→S 에 있으면 error{protocol}"
+        }
+      },
+      "required": ["t", "msg_id", "state", "at"],
+      "additionalProperties": false,
+      "description": "reason 은 보내지 않는다(failed). abort_reason 범주만. 허용은 서버가 보관한 헤더의 kind 로 가른다(protocol §7.2-7, #308): request = SenderViewState 값, chat = 수신자의 read·acknowledged 만(사유 없음, 서버 뷰는 바꾸지 않고 중계만), reply·rejected·system = 모두 거부"
+    },
+    "StatusState": {
+      "type": "string",
+      "enum": [
+        "sent",
+        "stored",
+        "received",
+        "pending",
+        "accepted",
+        "consumed",
+        "replied",
+        "rejected",
+        "aborted",
+        "expired",
+        "failed",
+        "withdrawn",
+        "done",
+        "read",
+        "acknowledged"
+      ],
+      "description": "status 프레임의 state(#308) = states.schema SenderViewState 값 전부 + read(chat 읽음) + acknowledged(chat 확인함, 묶음 14 B3). SenderViewState 를 바꾸면 여기도 같이"
+    },
+    "SessionPublish": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "session.publish"
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        },
+        "grade": {
+          "$ref": "message.schema.json#/$defs/Grade"
+        },
+        "liveness": {
+          "type": "string",
+          "enum": ["live:channel", "live:pty", "dead"]
+        },
+        "display": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "세션 제목(custom·ai·summary 만 — first_prompt 는 싣지 않음, m1-spec §2). relay 는 display_name::normalize 로 검사하고 어기면 session.publish 전체를 error{protocol}. 자르기는 받는 화면이 한다"
+        },
+        "folder": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "작업 폴더 이름 = cwd 마지막 성분만(전체·홈 경로 아님, m1-spec §2). relay 는 display_name::normalize_folder(normalize + 경로 구분자 '/'·'\\' 거부)로 검사하고 어기면 session.publish 전체를 error{protocol}. 코어는 같은 함수로 걸러 실패하면 이 필드를 뺀다"
+        },
+        "project": {
+          "$ref": "ws.schema.json#/$defs/PublishProject"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "busy": {
+          "type": "boolean",
+          "description": "그 세션이 턴을 처리 중(A15, 묶음 7). 쉼이면 필드를 뺀다(false 도 쉼). 공개한 세션만, 바뀔 때만·5초 묶음. 기다림·오류는 싣지 않는다. relay 는 저장해 디렉터리 세션 항목 busy 로 싣는다"
+        },
+        "audience": {
+          "$ref": "#/$defs/Audience"
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentKind"
+        },
+        "no": {
+          "type": "integer",
+          "description": "주인 코어가 매긴 같은 이름 번호(#569, 관문 Y2, PROTOCOL 13) — 표시용 주장일 뿐 주소·등급과 무관. 1..=999 만 뜻이 있다: relay·받는 코어는 그 밖이면 프레임은 받고 이 칸만 버린다. 제목이 first_prompt 인 세션(동료에게 폴더 이름으로 보임)은 싣지 않는다"
+        }
+      },
+      "required": ["t", "slug", "grade", "liveness"],
+      "additionalProperties": false
+    },
+    "AgentKind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,23}$",
+      "description": "세션을 띄운 에이전트 CLI 종류(Codex C2, PROTOCOL 13) — claude_code·codex 등. 없으면 claude_code. relay 는 꼴만 보고 저장해 디렉터리에 그대로 싣는다(값을 가리지 않아 새 종류에 판을 올리지 않는다). 받는 앱은 모르는 값을 없는 것으로 읽는다. 꼴이 어긋나면 session.publish 전체를 error{protocol}"
+    },
+    "Audience": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["org", "people"]
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+            "description": "같은 조직의 아이디(가입 아이디 규칙과 같음 — 32자 이하)"
+          },
+          "maxItems": 256
+        },
+        "lists": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ListId" },
+          "description": "#845 둘째(PROTOCOL 16, 기능 표시 lists) 주인의 친구 목록 id(0~16, 중복 없음 — 상한은 relay 가 본다). people 일 때만, users 와 합쳐 1개 이상. relay 는 주인의 목록 안에서만 찾고 없는 id 는 빈 목록으로 본다(거절 안 함). 라우팅·디렉터리 거름 = 주인 || users 에 있음 || 고른 목록에 지금 있음. 판 16 아래 연결엔 지금 멤버로 펼친 users 로 낮춰 싣는다"
+        }
+      },
+      "required": ["kind"],
+      "additionalProperties": false,
+      "description": "세션 공개 범위(묶음 20, PROTOCOL 6). 없으면 org(조직 전체 — 옛 앱). people 이면 users = 같은 조직 아이디 1~256명, 중복 없음, 나 자신 없음(org 엔 users 없음). 어기면 session.publish 전체를 error{protocol}. relay 는 다른 사람에게 싣지 않는다 — 디렉터리 세션 항목과 request 라우팅을 받는/보내는 사람마다 거른다(주인은 늘 범위 안). #845 둘째: users 는 같은 조직이거나 수락된 연락처, lists(친구 목록 id)를 섞을 수 있다(people 은 users+lists 합쳐 1개 이상)"
+    },
+    "OrgExternal": {
+      "type": "string",
+      "enum": ["closed"],
+      "description": "#845 둘째 ② 조직 밖 연락 막음"
+    },
+    "ListId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "#845 둘째 친구 목록 id — 앱이 만든다(무작위 권장)"
+    },
+    "FriendList": {
+      "type": "object",
+      "properties": {
+        "list_id": { "$ref": "#/$defs/ListId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160, "description": "목록 이름(1~40 글자)" },
+        "users": { "type": "array", "items": { "type": "string" }, "description": "목록에 든 아이디(0~256)" }
+      },
+      "required": ["list_id", "name", "users"],
+      "additionalProperties": false,
+      "description": "#845 둘째 내 친구 목록 하나(주인에게만 싣는다)"
+    },
+    "ServerStatusFileKind": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["bytes", "count"],
+      "additionalProperties": false,
+      "description": "서버 상태 파일 저장 공간의 한 종류(묶음 15 §2.7) — 암호문 합계 바이트·개수"
+    },
+    "SessionUnpublish": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "session.unpublish"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": ["t", "slug"],
+      "additionalProperties": false
+    },
+    "DirectoryList": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "directory.list"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false
+    },
+    "ProfileUpdate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "profile.update"
+        },
+        "display_name": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "새 표시 이름. relay 는 lodelai_protocol::display_name::normalize 규칙(앞뒤 공백 뺀 뒤 1~64자, Cc·Cf·Zl·Zp 없음)으로 검사하고 어기면 error{protocol}(ref 없음). maxLength 는 프레임 크기용 느슨한 상한"
+        },
+        "teams": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "내가 고른 팀 id 전부(덮어씀, #355)"
+        },
+        "avatar": {
+          "type": "null",
+          "description": "프로필 사진 지우기(묶음 15 §2) — 키가 있고 null 이면 지운다. null 이 아닌 값은 error{protocol}(사진은 avatar PUT 으로만 바뀐다). 이미 없으면 방송하지 않는다"
+        },
+        "look": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Look"
+            }
+          ],
+          "description": "#874 기본 이미지 고르기(기능 표시 look 이 있을 때만 — 옛 relay 는 모르는 칸을 거절). 값이면 저장하고 프로필 사진을 같이 지운다(한 트랜잭션·방송 한 번). null 이면 기본으로(사진은 그대로). 규칙 밖(kind·seed 꼴·tone 범위)은 error{protocol}. 같은 값이면 방송하지 않는다"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#326·#355·묶음 15). 인증된 연결의 사용자 자신의 표시 이름·팀·프로필 사진 지우기만 한다(대상 필드 없음). 없는 필드는 안 바꾼다. teams 는 그 조직의 팀 id 만(아니면 error{protocol}, 빈 배열 = 팀 없음). 성공 응답 없음 — 서버는 같은 조직에 directory.update(자기 포함)"
+    },
+    "DeviceRevoke": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.revoke"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "proof": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "message.schema.json#/$defs/Timestamp"
+            },
+            "sig": {
+              "$ref": "#/$defs/DeviceRevokeSig"
+            }
+          },
+          "required": ["at", "sig"],
+          "additionalProperties": false,
+          "description": "묶음 22 §12-11 ⓐ devrevoke: 서명자 = 이 연결의 기기(자기 폐기면 폐기되는 그 기기). relay 는 같은 사용자·폐기 안 됨·서명·at 이 지금 ±5분을 보고 틀리면 error{protocol}(폐기 안 함). 있으면 디렉터리 revocations 에 싣고 그 기기의 devcert 를 남긴다"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#325·#339). device_id 가 없거나 이 기기면 인증된 연결의 그 기기 자신을 폐기한다. 있으면 같은 사용자의 다른 기기를 폐기한다 — 대상이 나중에 등록됐으면 바로, 먼저 등록됐으면 요청 기기 등록 뒤 24시간이 지나야(아니면 error{code: too_early}(ref 없음 — 클라이언트는 한 번에 하나만 보낸다)). 남의 기기·모르는 id 는 모르는 기기와 같은 error{protocol}, 이미 폐기된 자기 사용자 기기는 멱등 device.revoked. 서버 순서 고정: 폐기 커밋 → device.revoked → 같은 조직에 directory.update → 폐기된 기기의 연결 닫음(대상 지정이면 요청 연결은 유지)"
+    },
+    "DeviceCertify": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.certify"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "sig": {
+          "$ref": "#/$defs/DeviceCertSig"
+        }
+      },
+      "required": ["t", "device_id", "sig"],
+      "additionalProperties": false,
+      "description": "C→S(#393, e2e-envelope §7a). 이 연결의 기기(서명자)가 같은 사용자의 폐기 안 된 다른 기기 device_id 에 내 기기 서명을 붙인다. relay 는 서명자 = 인증된 이 기기·폐기 안 됨, 대상 = 같은 사용자·폐기 안 됨·서명자와 다름을 보고 lodelai-devcert-v1 서명을 검증한 뒤 (서명자, 대상) 하나로 저장한다(같은 쌍은 덮어씀). 응답 없음 — 같은 조직에 directory.update. 어긋나면 error{protocol}(ref 없음). 서명자나 대상이 폐기되면 그 서명을 지운다"
+    },
+    "PresenceSet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "presence.set"
+        },
+        "share": {
+          "type": "boolean"
+        }
+      },
+      "required": ["t", "share"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 14 B1). 접속 표시를 같은 조직에 보일지(앱 설정 share_presence, 기본 켬). relay 는 사용자 단위로 저장하고 같은 조직에 directory.update. 응답 없음. false 면 그 사람의 online 을 아무에게도 싣지 않고, 그 사람에게 가는 디렉터리에도 남의 online 을 싣지 않는다"
+    },
+    "Typing": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "typing"
+        },
+        "to": {
+          "oneOf": [
+            {
+              "$ref": "message.schema.json#/$defs/PersonAddress"
+            },
+            {
+              "$ref": "message.schema.json#/$defs/GroupAddress"
+            }
+          ]
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": ["t", "to", "on"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 36 #613, 판 11). 사람이 그 대화 입력칸에 쓰는 중(on: true — 3초마다 갱신)·멈춤(false). 저장·대기열·응답·오류 없음. to = 사람 주소(1:1) 또는 그룹 주소(세션 주소는 받지 않음). relay 는 받는 사람의 지금 연결된 판 11 이상 기기에만 typing(S→C)으로 건넨다 — 범위 밖(다른 조직·그룹 멤버 아님)·연결마다 to 마다 같은 값은 초당 1·값이 바뀌면 따로 초당 1 을 넘음·보낸 사람이나 받는 사람이 presence.set{share: false} 면 조용히 버린다"
+    },
+    "TypingNotice": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "typing"
+        },
+        "from": {
+          "$ref": "message.schema.json#/$defs/PersonAddress"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/GroupAddress"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": ["t", "from", "on"],
+      "additionalProperties": false,
+      "description": "S→C(묶음 36 #613, 판 11). from 이 지금 쓰는 중(on)·멈춤. from 은 relay 가 인증된 연결의 사용자로 채운다(클라이언트 값을 쓰지 않음). group 이 있으면 그 그룹 대화, 없으면 from 과의 1:1. 판 11 아래 연결엔 보내지 않는다. 저장하지 않으니 sync·재접속 뒤 다시 오지 않는다 — 받는 쪽은 6초 동안 갱신이 없으면 끈다"
+    },
+    "OwnStream": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "own_stream"
+        },
+        "to_device": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "AEAD 암호문 base64url(무패딩). 디코드 바이트는 OWN_STREAM_MAX_BYTES 이하"
+        }
+      },
+      "required": ["t", "to_device", "epoch", "seq", "data"],
+      "additionalProperties": false,
+      "description": "C→S(#870, 기능 표시 own_control·hello.own). 내 기기 하나에 흘리는 버려도 되는 것(맥 상태·화면·보기 요청·상태 청함 — 가름은 data 안). 키는 self 그룹 exporter 에서 기기 짝·방향마다 뽑고(코어 몫), relay 는 속을 모른다. relay 는 to_device 가 보낸 사람과 같은 사용자의 폐기 안 된 기기이고 지금 hello.own 으로 붙어 있으면 그 연결에만 own_stream(S→C)으로 넘긴다. 아니면·data 가 너무 크면·보낸 기기→받는 기기 짝이 초당 OWN_STREAM_BYTES_PER_S 를 넘으면 조용히 버린다. 저장·대기열·ack·푸시·오류 없음"
+    },
+    "OwnStreamNotice": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "own_stream"
+        },
+        "from_device": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": ["t", "from_device", "epoch", "seq", "data"],
+      "additionalProperties": false,
+      "description": "S→C(#870). 내 다른 기기가 흘린 것. from_device 는 relay 가 인증된 연결의 기기로 채운다(클라이언트 값을 쓰지 않음). epoch·seq·data 는 받은 그대로. hello.own 없이 붙은 연결엔 보내지 않는다. 저장하지 않으니 재접속 뒤 다시 오지 않는다"
+    },
+    "OwnAlert": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "own_alert"
+        },
+        "kind": {
+          "enum": ["card", "usage"],
+          "description": "#890 알림 종류(없으면 card). card = 사람 손을 기다리는 카드가 새로 생김, usage = 에이전트 사용량이 한도에 가까움(창마다 80·95 를 넘는 순간 — 판정은 맥). lodelai-features 에 own_alert_kinds 가 있을 때만 싣는다(옛 relay 는 모르는 칸을 버려 카드 문구로 가지 않게 — usage 는 아예 보내지 않음)"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#870 '승인 기다림', 기능 표시 own_control·hello.own). 내 맥에 사람 손이 필요한 일이 생김. 본문이 없다 — relay 는 보낸 사람의 다른 기기 중 지금 붙어 있지 않고 푸시 토큰이 있는 기기에 종류별 고정 문구 푸시를 보낸다(에이전트 이름·숫자·내용 없음, 기기마다 종류별로 1분에 1번, 넘으면 버림). 응답·오류 없음. 푸시를 끈 relay 는 받고 버린다"
+    },
+    "OwnLive": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "own_live" },
+        "busy": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "approval": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "question": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "oldest": {
+          "type": "string",
+          "format": "date-time",
+          "description": "처리 중인 것 중 가장 오래된 시작 시각(busy 0 이면 뺌)"
+        }
+      },
+      "required": ["t", "busy", "approval", "question"],
+      "additionalProperties": false,
+      "description": "C→S(#882·ADR 0014, 기능 표시 own_live·hello.own). 맥의 내 모든 앱 세션 합(공개 안 한 세션 포함) — 숫자만, 이름·글 없음. own_live.want{on:true} 를 받았을 때만, 접속 때 한 번 + 바뀔 때만·5초 묶음. relay 는 메모리에만 두고(저장·로그 없음) 내 휴대폰 현황 푸시를 낸다. 응답·오류 없음, 어긋나거나 연결당 초당 1 을 넘으면 버림"
+    },
+    "OwnLiveWant": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "own_live.want" },
+        "on": { "type": "boolean" }
+      },
+      "required": ["t", "on"],
+      "additionalProperties": false,
+      "description": "S→C(#882). 이 사용자에게 현황을 받는 휴대폰(push.live on)이 있나 — hello.own 으로 붙은 연결에 접속 때 한 번 + 바뀔 때. 맥은 on 일 때만 own_live 를 보낸다(받는 사람이 없으면 메타를 보내지 않음)"
+    },
+    "PushLive": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "push.live" },
+        "req": { "$ref": "#/$defs/BlobReq" },
+        "on": { "type": "boolean", "description": "이 기기가 현황 푸시를 받음. false 면 두 토큰도 지운다" },
+        "start_token": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{16,200}$",
+          "description": "iOS 17.2+ Live Activity push-to-start 토큰(16진). 없으면 relay 도 지움"
+        },
+        "activity": {
+          "type": "object",
+          "properties": {
+            "token": { "type": "string", "pattern": "^[0-9a-fA-F]{16,200}$" },
+            "started": { "type": "string", "format": "date-time" }
+          },
+          "required": ["token", "started"],
+          "additionalProperties": false,
+          "description": "지금 떠 있는 활동의 갱신 토큰과 시작 시각. 없으면 떠 있는 활동 없음(relay 도 지움)"
+        }
+      },
+      "required": ["t", "req", "on"],
+      "additionalProperties": false,
+      "description": "C→S(#882, 기능 표시 own_live). 늘 지금 상태 전부를 보낸다(없는 칸 = 없음 — 바꾼 칸만 보내지 않음). 그 기기의 push.register 행이 있어야 한다(없으면 error{protocol, ref}). 답 push.live.ok. 토큰은 그 행과 같이 지워진다"
+    },
+    "PushLiveOk": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "push.live.ok" },
+        "req": { "$ref": "#/$defs/BlobReq" }
+      },
+      "required": ["t", "req"],
+      "additionalProperties": false,
+      "description": "S→C(#882). push.live 를 받았다"
+    },
+    "BlobReq": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "description": "클라이언트가 붙이는 짧은 요청 id(응답·error.ref 짝 맞추기, 묶음 15)"
+    },
+    "BlobToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "1회용 HTTP 토큰(무작위 32B base64url 무패딩). relay 는 SHA-256 만 저장한다"
+    },
+    "BlobReserve": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "blob.reserve"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "ct_len": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "올릴 바이트 수. message = 암호문 길이(blob_ct_len(평문), 상한 blob_ct_len(FILE_MAX_BYTES)), avatar = PNG 길이(상한 AVATAR_MAX_BYTES)"
+        },
+        "purpose": {
+          "type": "string",
+          "enum": ["message", "avatar"]
+        },
+        "for": {
+          "type": "string",
+          "enum": ["org"],
+          "description": "#554: purpose avatar 일 때만 — 내 조직의 사진. 예약 때와 PUT 끝날 때 둘 다 요청 사용자가 그 조직 관리자인지 본다(아니면 예약 = error{protocol, ref}, PUT 끝 = 403·blob 지움). 크기·꼴·시간당 상한은 사람 사진과 같은 셈. message 에 붙으면 error{protocol, ref}"
+        },
+        "for_device": {
+          "$ref": "message.schema.json#/$defs/DeviceId",
+          "description": "#881 지난 대화 옮기기 조각(기능 표시 history_transfer): purpose message 일 때만, 받을 기기 하나 — 같은 사용자의 폐기 안 된 승인된 다른 기기(요청 기기도 승인된 기기). 아니면 error{protocol, ref}(이유 안 가름). 그 기기만 blob.get(표 줄 때 다시 확인), 그 기기나 올린 기기의 blob.fetched 에 바로 지움, 못 받히면 BLOB_HISTORY_TTL_S 뒤 지움, 두 기기 중 하나가 폐기되면 지움. 메시지 헤더 blobs 에 묶을 수 없다(error{protocol}). 상한: 아직 안 받힌 조각 합 BLOB_HISTORY_PENDING_MAX_BYTES(넘으면 quota), 하루 BLOB_HISTORY_DAILY_MAX_BYTES(넘으면 daily_quota·until — 판으로 내리지 않음)"
+        }
+      },
+      "required": ["t", "req", "ct_len", "purpose"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 15, ADR 0009 §1). 검사 순서: 크기 → error{protocol, ref: req}, 사용자 미전달 합계 → error{quota}, 시간당 BLOB_RESERVE_PER_HOUR(avatar 는 따로 AVATAR_RESERVE_PER_HOUR — 묶음 27 #427) → error{rate_limited}(연결은 유지), 디스크 하한 → error{storage_full}. 통과하면 blob.reserved"
+    },
+    "BlobReserved": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "blob.reserved"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "blob_id": {
+          "$ref": "message.schema.json#/$defs/BlobId"
+        },
+        "put_token": {
+          "$ref": "#/$defs/BlobToken"
+        }
+      },
+      "required": ["t", "req", "blob_id", "put_token"],
+      "additionalProperties": false,
+      "description": "S→C(묶음 15). put_token 은 PUT /v1/blobs/{blob_id} 한 번(성공·실패 모두 소진), BLOB_PUT_TOKEN_TTL_S"
+    },
+    "BlobGet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "blob.get"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "blob_id": {
+          "$ref": "message.schema.json#/$defs/BlobId"
+        }
+      },
+      "required": ["t", "req", "blob_id"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 15). message blob 은 이 기기가 그 blob 이 묶인 메시지의 수신 기기(envelope_devices)일 때만, avatar 는 같은 조직일 때만 blob.ticket. 인가 실패·모름·지워짐은 모두 같은 error{protocol, ref: req}(열거 방지)"
+    },
+    "BlobTicket": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "blob.ticket"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "blob_id": {
+          "$ref": "message.schema.json#/$defs/BlobId"
+        },
+        "get_token": {
+          "$ref": "#/$defs/BlobToken"
+        }
+      },
+      "required": ["t", "req", "blob_id", "get_token"],
+      "additionalProperties": false,
+      "description": "S→C(묶음 15). get_token 은 GET /v1/blobs/{blob_id} 한 번, 이 기기·이 blob, BLOB_GET_TOKEN_TTL_S"
+    },
+    "BlobFetched": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "blob.fetched"
+        },
+        "blob_id": {
+          "$ref": "message.schema.json#/$defs/BlobId"
+        }
+      },
+      "required": ["t", "blob_id"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 15). 이 기기가 그 blob 을 받아 풀었다. 응답 없음, 이 기기가 수신 기기가 아니면 무시. 수신 기기(폐기 안 된) 모두 받으면 relay 가 파일을 지운다"
+    },
+    "GroupsList": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "groups.list"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 16). 내가 지금 멤버인 그룹과 마지막 group_seq — 빠진 seq 를 다시 받기 위한 것"
+    },
+    "Groups": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "groups"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "group": {
+                "$ref": "message.schema.json#/$defs/GroupAddress"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "org_left": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "message.schema.json#/$defs/PersonAddress"
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["user", "seq"],
+                  "additionalProperties": false
+                },
+                "description": "조직에서 빠져 그룹에서 나간 멤버와 그때 그 그룹 seq(left_seq, 묶음 16 §3a ④ 고침). 나가기·내보내기 op 로 나간 사람은 없음. 클라이언트는 op seq 를 적용한 바로 뒤에 left·관리자 승계를 계산한다"
+              },
+              "joining": {
+                "type": "array",
+                "items": {
+                  "$ref": "message.schema.json#/$defs/PersonAddress"
+                },
+                "description": "#845 ④ 그룹 초대를 수락해 add 를 기다리는 사람(30일). 멤버 기기가 add 한다 — 초대한 사람 기기 먼저, 다른 멤버는 본 지 1분 뒤에만. 그 사람의 KeyPackage 는 이 그룹 멤버면 가져갈 수 있다. 없으면 칸 없음"
+              },
+              "members_display": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "message.schema.json#/$defs/PersonAddress"
+                    },
+                    "display_name": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "required": ["user", "display_name"],
+                  "additionalProperties": false
+                },
+                "description": "§7-57 덧 1: 그룹 멤버와 joining 전부의 가입 표시 이름(relay 가 가진 것 — 디렉터리 안팎을 가르지 않음, 지운 계정 뺌). 클라이언트는 디렉터리·지난 사람에 없을 때만 쓴다. 없으면 칸 없음(옛 relay)"
+              }
+            },
+            "required": ["group", "seq"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["t", "items"],
+      "additionalProperties": false,
+      "description": "S→C(묶음 16). groups.list 의 응답, 그리고 조직 빠짐 직후(directory.update 뒤)·접속 때(쌓인 메시지보다 먼저) relay 가 먼저 보낸다. 이름 없음(E2E)"
+    },
+    "GroupsReplay": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "groups.replay"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/GroupAddress"
+        },
+        "from_seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["t", "group", "from_seq"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 16). 그 그룹의 from_seq 부터의 group 메시지 중 아직 보관 중이고 이 기기가 수신 기기인 것만 다시 deliver(group_seq 를 실어). 응답 프레임 없음. 지금 멤버가 아니면 error{protocol}"
+    },
+    "DeviceCertSig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$",
+      "description": "Ed25519(lodelai-devcert-v1 ‖ 0 ‖ server ‖ 0 ‖ user ‖ 0 ‖ 대상 device_id ‖ 0 ‖ 대상 x25519 32B ‖ 0 ‖ 서명자 device_id) — 서명자 기기 서명 키(protocol §3, #393)"
+    },
+    "DeviceRevoked": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.revoked"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["device", "admin", "left", "recovery", "admin_device"],
+          "description": "누가 끊었나(묶음 5): device = 본인 기기(자기·내 다른 기기), admin = 조직 관리자(남 기기 끊기·내보내기), left = 내가 조직을 나갔다(member.leave — 내 모든 기기에), recovery = 다른 내 기기가 메일 확인 끊기(device.recover, #577)로 at 에 끊었다, admin_device = 조직 관리자가 기기 바꾸는 중인 내 옛 기기만 끊었다(member.revoke_device, #737 — 내보내기 아님, 앱은 recovery 처럼 자동 지움 없이 기록을 남긴다. 판 13 아래 연결엔 admin 으로)"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "끊긴 시각(#577, devices.revoked_ms) — 없으면 앱은 받은 시각을 쓴다"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#325·#339). device.revoke 의 응답 하나(device_id 는 요청에 있던 값 그대로). 자기 폐기면 클라이언트는 이것을 받아야만 로컬 지움으로 간다 — 응답 없이 끊기면 unreachable"
+    },
+    "Directory": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "directory"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryPeopleItem"
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "$ref": "message.schema.json#/$defs/SessionAddress"
+              },
+              "grade": {
+                "$ref": "message.schema.json#/$defs/Grade"
+              },
+              "liveness": {
+                "type": "string",
+                "enum": ["live:channel", "live:pty", "dead"]
+              },
+              "display": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string",
+                "description": "session.publish.title 그대로(relay 가 검사한 값)"
+              },
+              "folder": {
+                "type": "string",
+                "description": "session.publish.folder 그대로(폴더 이름만, relay 가 검사한 값)"
+              },
+              "project": {
+                "$ref": "ws.schema.json#/$defs/PublishProject"
+              },
+              "busy": {
+                "const": true,
+                "description": "그 세션이 턴을 처리 중(session.publish.busy, A15). 참일 때만 싣고 아니면 생략(쉼)"
+              },
+              "agent": {
+                "$ref": "#/$defs/AgentKind",
+                "description": "session.publish.agent 그대로(Codex C2). 없으면 생략 = claude_code"
+              },
+              "no": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 999,
+                "description": "session.publish.no 그대로(관문 Y2, 1..=999 만 — 밖이면 relay 가 버려 생략). 받는 코어는 표시용으로만 쓰고 그 밖이면 버린다"
+              },
+              "offline": {
+                "const": true,
+                "description": "#739 liveness dead 인 까닭이 주인이 끝낸 것이 아니라 그 세션을 공개한 기기의 연결이 끊긴 것(relay 가 dead 로 바꿈)일 때만 — 주인 맥이 오프라인. 주인이 다시 publish 하면 빠진다. 판 13 아래 연결의 전체 directory 에선 뺀다"
+              },
+              "audience": {
+                "$ref": "#/$defs/Audience",
+                "description": "#845 둘째(PROTOCOL 16, 기능 표시 org_external) 주인에게만 — 저장된 공개 범위 그대로(kind people, relay 가 관계없는 아이디를 빼고 받은 뒤 값, 얼린 연락처 포함). 주인 코어는 이것을 정본으로 받는다. 범위가 조직 전체면 생략. 범위 안 다른 사람에게 가는 항목·판 16 아래 연결엔 없다"
+              }
+            },
+            "required": ["address", "grade", "liveness"],
+            "additionalProperties": false
+          }
+        },
+        "org": {
+          "$ref": "#/$defs/DirectoryOrg"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryTeam"
+          },
+          "description": "이 조직의 팀 전부(#355, 조직 관리자가 만든 것). M1 로컬엔 없다"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryPeopleItem"
+          },
+          "description": "#845 수락된 연락처(조직 밖 사람 — 같은 조직 사람은 people 에만). people 항목과 같은 꼴 + task_ok·task_ok_for_me, 팀·초대 관계는 없음. contacts 연결에만"
+        },
+        "link_requests": {
+          "$ref": "#/$defs/LinkRequests"
+        },
+        "org_invites": {
+          "$ref": "#/$defs/OrgInvites"
+        },
+        "group_invites": {
+          "$ref": "#/$defs/GroupInvites"
+        },
+        "group_members": {
+          "$ref": "#/$defs/GroupMembers"
+        },
+        "org_invites_sent": {
+          "$ref": "#/$defs/OrgInvitesSent"
+        },
+        "group_invites_sent": {
+          "$ref": "#/$defs/GroupInvitesSent"
+        },
+        "mutes": {
+          "$ref": "#/$defs/Mutes"
+        },
+        "pins": {
+          "$ref": "#/$defs/Pins"
+        },
+        "lists": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FriendList" },
+          "description": "#845 둘째(기능 표시 lists) 내 친구 목록 전부(늘 통째, 주인 자신에게만). 판 16 아래 연결엔 빠진다"
+        }
+      },
+      "required": ["t", "people", "sessions"],
+      "additionalProperties": false
+    },
+    "DirectoryUpdate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "directory.update"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "directory 의 people 항목과 같은 모양(devices 포함). 서버는 바뀔 때마다 전체 목록을 보낸다(부분 갱신 없음, #275)"
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "org": {
+          "$ref": "#/$defs/DirectoryOrg"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryTeam"
+          },
+          "description": "이 조직의 팀 전부(#355, 조직 관리자가 만든 것). M1 로컬엔 없다"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "directory 의 links 와 같은 모양"
+        },
+        "link_requests": {
+          "$ref": "#/$defs/LinkRequests"
+        },
+        "org_invites": {
+          "$ref": "#/$defs/OrgInvites"
+        },
+        "group_invites": {
+          "$ref": "#/$defs/GroupInvites"
+        },
+        "group_members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "directory 의 group_members 와 같은 모양"
+        },
+        "org_invites_sent": {
+          "$ref": "#/$defs/OrgInvitesSent"
+        },
+        "group_invites_sent": {
+          "$ref": "#/$defs/GroupInvitesSent"
+        },
+        "mutes": {
+          "$ref": "#/$defs/Mutes"
+        },
+        "pins": {
+          "$ref": "#/$defs/Pins"
+        },
+        "lists": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FriendList" },
+          "description": "#845 둘째(기능 표시 lists) 내 친구 목록 전부(늘 통째, 주인 자신에게만). 판 16 아래 연결엔 빠진다"
+        }
+      },
+      "required": ["t", "people", "sessions"],
+      "additionalProperties": false
+    },
+    "Ping": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "ping"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false
+    },
+    "Pong": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "pong"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "error"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "rate_limited",
+            "protocol",
+            "internal",
+            "too_early",
+            "device_revoked",
+            "name_taken",
+            "handle_taken",
+            "last_admin",
+            "quota",
+            "daily_quota",
+            "storage_full",
+            "version_unsupported",
+            "recover_refused",
+            "device_unconfirmed",
+            "account_suspended",
+            "org_changed",
+            "approved"
+          ],
+          "description": "name_taken(#355) = 조직 관리자의 team.create·team.update 가 그 조직의 다른 팀 이름과 겹친다(관리자 판정 뒤에만 — 관리자가 아니면 protocol). device_revoked(#339) = auth 서명이 폐기된 이 기기의 저장된 공개키로 맞았다 — 비밀키를 가진 쪽만 받으므로 열거가 아니다. 서명이 틀리거나 모르는 기기는 protocol. 받은 클라이언트는 재접속을 멈추고 로컬 지움(#325)으로. handle_taken(#364) = device.register 의 연결 코드 아이디를 다른 사람이 이미 쓴다. version_unsupported(묶음 22 §12-24) = hello 의 v 가 [min, max] 밖 — challenge 전에 보내고 닫는다(판 번호는 비밀이 아님, auth 실패와 구별). quota·storage_full(묶음 15) = blob.reserve 가 사용자 미전달 합계(BLOB_USER_PENDING_MAX_BYTES)·relay 디스크 하한에 걸림(ref = req). daily_quota(#876) = blob.reserve 가 계정당 UTC 하루 첨부 합(BLOB_DAILY_MAX_BYTES, 운영자 설정)에 걸림(ref = req, until = 다음 UTC 0시) — hello.v ≥ OWN_CONTROL_PROTOCOL 연결에만, 그 아래엔 quota. last_admin(묶음 5) = 관리자가 0명이 되는 org.admin{admin:false}, 또는 관리자가 한 명뿐일 때 그 사람의 마지막 살아 있는 기기를 끊는 device.revoke·member.leave — 다른 관리자를 먼저 세운다(조직에 나 말고 사람이 없으면 검사하지 않음). device_unconfirmed(#737) = 확인되지 않은 기기(같은 사용자의 다른 산 기기가 있는데 그 기기의 확인(devcert)이 없어 잎 자격이 없음)가 관리자 동작(org.update·org.admin·member.remove·member.revoke_device·team.create·team.update·team.delete·invite.create)을 하려 했다 — 이메일을 뺏은 사람이 확인 전에 조직을 바꾸지 못하게. 기존 기기에서 이 기기를 확인하면 된다(ref 없음). #888 부터는 확인 전 기기가 보낸 허용 밖 프레임 전부에 같은 코드(send 면 ref = msg_id, req 있는 요청이면 ref = req) org_changed(#845 ④) = 이 계정이 다른 조직으로 옮겼다(org.invite.answer accept) — relay 가 곧 연결을 닫는다. 앱은 끊김 기다림 없이 바로 다시 붙는다 account_suspended(#845) = 운영자가 이 계정을 멈췄다 — 인증 뒤 contacts 연결에만 보내고 닫는다(ref 없음, until 은 기한이 있을 때만 RFC 3339). 받은 클라이언트는 보통 다시 붙기를 멈추고 until(30초~15분으로 묶음)·15분마다 다시 붙어 본다(키·데이터는 그대로). approved(#888) = 이 기기가 방금 확인(devcert)됐다 — relay 가 곧 닫는다. 앱은 org_changed 와 같이 끊김 기다림 없이 바로 다시 붙는다(접속 때 일을 확인된 연결로 다시)."
+        },
+        "message": {
+          "type": "string",
+          "description": "진단용(로그). UI 는 이 문구를 보여 주지 않고 code 로 렌더한다(#134)"
+        },
+        "ref": {
+          "type": "string",
+          "description": "send 형식 오류면 그 msg_id(#139), blob.reserve·blob.get 의 오류면 그 req(묶음 15). 그 밖의 오류(too_early 포함)에는 없다"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["device", "admin", "left", "recovery", "admin_device"],
+          "description": "device_revoked 일 때만(묶음 5): 누가 끊었나 — device = 본인 기기, admin = 조직 관리자(남 기기 끊기·내보내기), left = 내가 조직을 나갔다, recovery = 다른 내 기기가 메일 확인 끊기로 끊었다(#577 — 앱은 자동 지움 없이 기록을 남기고 사유를 보인다), admin_device = 조직 관리자가 내 옛 기기만 끊었다(#737 — recovery 와 같이 다룸, 판 13 아래 연결엔 admin). 화면 문구를 가른다"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "device_revoked 일 때만(#577): 끊긴 시각(devices.revoked_ms) — 끊긴 기기가 다시 붙을 때 화면에 '언제 끊겼나'를 보인다"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["trusted", "no_older", "cooldown", "exhausted", "not_scheduled", "not_target", "ended"],
+          "description": "recover_refused 일 때만(#577, 계약 6490433889 §3 표): device.recover = trusted(요청 기기가 이미 잎 자격)·no_older(끊을 먼저 기기 없음)·cooldown(막힘·취소 뒤 24h 안)·exhausted(30일에 막기 3번), device.recover_cancel = not_scheduled(건 것이 없음·요청 기기가 아님), device.recover_block = not_target(그 걸기의 대상이 아님)·ended(걸기가 이미 끝남). 연결은 끊지 않는다"
+        },
+        "until": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "recover_refused 의 cooldown·exhausted(#577): 다시 걸 수 있는 시각. key_packages.claim 의 rate_limited(0.2.5): 같은 가져가기가 다시 될 가장 이른 시각 — 앱은 짧으면 기다리고 길면 그 변경을 실패로 끝낸다. link.request 의 rate_limited(#845, message = link.request): 하루·걸린 요청·없는 아이디 상한이 풀리는 가장 이른 시각. blob.reserve 의 daily_quota(#876): 다음 UTC 0시. 그 밖에는 없다"
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "version_unsupported 일 때만(묶음 22 §12-24): relay 가 받는 가장 낮은 판(PROTOCOL_MIN). 내 판이 이보다 낮으면 앱이 옛 판"
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "version_unsupported 일 때만: relay 의 판(PROTOCOL_VERSION). 내 판이 이보다 높으면 서버가 옛 판"
+        }
+      },
+      "required": ["t", "code", "message"],
+      "additionalProperties": false
+    },
+    "DirectoryOrg": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "admins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+          },
+          "description": "조직 관리자 아이디(user) 전부, 이름순(묶음 5 — 여러 명, 권한은 같다). 첫 관리자는 조직 만들기 코드로 가입한 사람. 조직 이름·팀·초대·내보내기·관리자 주기·빼기·같은 조직 사람 기기 끊기는 관리자만"
+        },
+        "avatar": {
+          "$ref": "message.schema.json#/$defs/BlobId",
+          "description": "조직 사진 blob(#554 — 사람 사진과 같은 256 PNG, 암호화 안 함, 같은 조직만 blob.get). 없으면 생략"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["personal", "org"],
+          "description": "#845 §7-46 덧 4 개인 공간(가입 때 만든 혼자의 조직)이면 personal, 그 밖은 org. 옛 relay 는 이 칸이 없다(앱은 조직으로 본다)"
+        },
+        "color": {
+          "$ref": "#/$defs/OrgColor",
+          "description": "조직 고유색(관리자가 org.update.color 로 정함). 없으면 생략 — 화면이 자동 색. kind 처럼 늘 싣는다(옛 앱 코어는 org 의 id·name·admins 만 골라 읽음)"
+        },
+        "external": {
+          "$ref": "#/$defs/OrgExternal",
+          "description": "#845 둘째 ②(기능 표시 org_external) 관리자가 조직 밖 연락을 막았으면 closed. 없으면 열림. 멤버 화면은 연락 더하기 입구를 그리지 않는다"
+        }
+      },
+      "required": ["id", "name", "admins"],
+      "additionalProperties": false,
+      "description": "받는 사람의 조직(hosted, #355). 한 사람 = 한 조직. 이름은 신원이 아니다(같은 이름의 조직이 여럿 있어도 된다)"
+    },
+    "OrgColor": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$",
+      "description": "조직 고유색 #rrggbb 소문자 6자리. relay 는 꼴만 보고 그대로 나른다(읽기 좋은지는 화면이)"
+    },
+    "DirectoryTeam": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name"],
+      "additionalProperties": false
+    },
+    "OrgUpdate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.update"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "avatar": {
+          "type": "null",
+          "description": "조직 사진 지우기(#554) — 키가 있고 null 이면 지운다. null 이 아닌 값은 error{protocol}(사진은 blob.reserve{for: org} 의 PUT 으로만). 이미 없으면 방송하지 않는다"
+        },
+        "color": {
+          "anyOf": [{ "$ref": "#/$defs/OrgColor" }, { "type": "null" }],
+          "description": "조직 고유색 정하기 — 문자열 = 정함, null = 지움(자동 색). 꼴 밖·개인 공간이면 error{protocol}. 같은 값이면 방송하지 않는다. 앱은 relay features org_color 가 있을 때만 싣는다"
+        },
+        "external": {
+          "anyOf": [{ "$ref": "#/$defs/OrgExternal" }, { "type": "null" }],
+          "description": "#845 둘째 ② 조직 밖 연락 막기 — closed = 막음, null = 엶. 관리자·조직(개인 공간 아님)만, 어기면 error{protocol}. 막으면 그 조직 멤버와 조직 밖 사람 사이의 수락된 연락처를 relay 가 얼린다(행은 남김 — 끄거나 멤버가 나가면 되살아남): 새 요청·연락 링크·1:1 글·첨부·에이전트 요청·공개 범위가 다 막히고 디렉터리 links 에서 양쪽 다 빠진다. 주고받은 대기 요청과 멤버가 보낸 미가입 이메일 초대는 지운다. 앱은 relay features org_external 이 있을 때만 싣는다"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#355·#554, 조직 관리자만). 조직 이름 바꾸기(display_name::normalize 규칙)·조직 사진 지우기·조직 고유색(조직 색). name·avatar·color 셋 다 없으면 error{protocol}. 응답 없음 — 같은 조직에 directory.update. 관리자가 아니거나 규칙 밖이면 error{protocol}(ref 없음)"
+    },
+    "TeamCreate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "team.create"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": ["t", "name"],
+      "additionalProperties": false,
+      "description": "C→S(#355, 조직 관리자만). 팀 하나 만들기(이름은 display_name::normalize, 조직 안에서 같은 이름 금지 — 겹치면 error{name_taken}). 응답 없음 — directory.update 의 teams 에 생긴다. 관리자 아님·규칙 밖은 error{protocol}"
+    },
+    "TeamUpdate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "team.update"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": ["t", "id", "name"],
+      "additionalProperties": false,
+      "description": "C→S(#355, 조직 관리자만). 팀 이름 바꾸기. 응답 없음 — directory.update. 다른 팀 이름과 겹치면 error{name_taken}, 남의 조직 팀·모르는 id·규칙 밖은 error{protocol}"
+    },
+    "TeamDelete": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "team.delete"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["t", "id"],
+      "additionalProperties": false,
+      "description": "C→S(#355, 조직 관리자만). 팀 빼기 — 사람들의 teams 에서도 빠진다. 응답 없음 — directory.update. 남의 조직 팀·모르는 id 는 error{protocol}"
+    },
+    "InviteCreate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "invite.create"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "있으면 그 이메일로만 가입된다"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#355, 조직 관리자만). 초대 토큰 하나 발급(1회용, 7일, 서버는 해시만). 응답 invite.created. 관리자가 아니면 error{protocol}, 관리자당 발급 상한(1시간 20개)을 넘으면 error{rate_limited}"
+    },
+    "InviteCreated": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "invite.created"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expires_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp"
+        }
+      },
+      "required": ["t", "token", "expires_at"],
+      "additionalProperties": false,
+      "description": "S→C(#355). invite.create 의 응답. 토큰은 POST /v1/devices {org: {invite: <토큰>}} 에 쓴다"
+    },
+    "DeviceRegister": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.register"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "새 기기의 기기 연결 코드(lodelai-dev1. + base64url(JCS({user, display_name?, device_pubkeys, device_id})))"
+        }
+      },
+      "required": ["t", "code"],
+      "additionalProperties": false,
+      "description": "C→S(#364, 원격 relay 의 관리자만). 동료·관리자 자신의 다른 맥을 등록한다 — 원격 relay 에는 HTTP 등록 토큰이 없다. relay 가 device_id 를 공개키로 재계산하고 x25519_sig 를 검증한다. 관리자 자신의 아이디면 기기 추가, 새 아이디면 새 사람, 다른 사람이 쓰는 아이디면 error{handle_taken}. 관리자 아님·코드 형식·지문 불일치는 error{protocol}(ref 없음). 성공은 device.registered 뒤 같은 조직에 directory.update. 이미 등록된 같은 기기는 멱등 device.registered"
+    },
+    "DeviceRegistered": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.registered"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        }
+      },
+      "required": ["t", "user", "device_id"],
+      "additionalProperties": false,
+      "description": "S→C(#364). device.register 의 응답"
+    },
+    "OrgAdmin": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.admin"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+        },
+        "admin": {
+          "type": "boolean"
+        }
+      },
+      "required": ["t", "user", "admin"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 5, 관리자만). 같은 조직의 내보내지 않은 사람을 관리자로 세우거나(admin:true) 뺀다(false, 자기 자신도). 응답 없음 — 바뀌면 같은 조직에 directory.update, 이미 그 상태면 멱등(방송 없음). 관리자가 아니거나 대상이 조직 밖·내보낸 사람이면 error{protocol}, 관리자가 0명이 되면 error{last_admin}(모두 ref 없음)"
+    },
+    "MemberRemove": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "member.remove"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+        }
+      },
+      "required": ["t", "user"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 5, 관리자만). 같은 조직 사람을 내보낸다: 그 사람 기기 전부를 device.revoke 와 같은 순서로 폐기(by=admin) + users.removed_ms. 자기 자신·조직 밖·관리자(먼저 org.admin{admin:false})·이미 내보낸 사람은 error{protocol}(ref 없음). 응답은 뒤따르는 directory.update(내보낸 사람은 빠진다)"
+    },
+    "MemberRevokeDevice": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "member.revoke_device"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        }
+      },
+      "required": ["t", "user", "device_id"],
+      "additionalProperties": false,
+      "description": "C→S(#737, 관리자만 — ADR 0006 관리자 폐기). 같은 조직 다른 사람의 옛 기기를 지금 끊는다 — 그 사람이 메일 확인 끊기(device.recover)를 걸어 둔 동안, 그 걸기의 대상(targets) 기기만. 24시간 없음. 자기 user·조직 밖·내보낸 사람·걸기 없음·대상 아님·이미 폐기된 기기는 error{protocol}(ref 없음). 확인 안 된 요청 기기는 error{device_unconfirmed}. 서버 순서: 폐기 커밋(by=admin) → 그 기기 연결에 device.revoked{by: admin} → 걸기 다시 보기(대상이 다 빠지면 요청 기기에 device.recovered) → 같은 조직에 directory.update → 그 기기 연결 닫음 → 그 사람 이메일로 알림 메일. 응답은 뒤따르는 directory.update"
+    },
+    "MemberLeave": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "member.leave"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 5, 서버 relay 만 — 로컬은 error{protocol}). 조직을 나간다: 내 기기 전부 폐기 + removed_ms 한 트랜잭션 → 내 모든 연결에 device.revoked{by: left} → 같은 조직에 directory.update → 내 연결을 닫는다. 유일한 관리자면 error{last_admin}(ref 없음) — 단 조직에 나 말고 (내보내지 않은) 사람이 없으면 검사하지 않는다"
+    },
+    "OrgLeave": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.leave"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#877 묶음 B, 서버 relay 만 — 로컬은 error{protocol}). 조직(kind org)에서 나가 새 개인 공간으로 옮긴다 — 계정은 남는다(아이디·기기·이메일·이름·얼굴·연락처 유지). 조직 것만 끊는다: 조직 역할·팀·조직 초대·초대 관계·기기 바꾸기 기록, 공개 에이전트 범위는 전부 나만(운영 멈춤은 계정 제재라 그대로), 옛 조직이 주인인 그룹은 org_left. 서버 순서: 한 트랜잭션 → 옛 조직 동료에게 directory.update·groups → 내 모든 연결에 error{org_changed} 뒤 닫음(앱은 바로 다시 붙어 개인 공간 디렉터리를 받는다). 개인 공간이면 error{protocol}, 유일한 관리자면 error{last_admin}(ref 없음, member.leave 와 같은 규칙). 계정 지우기는 member.leave 그대로. 앱은 relay features org_leave 가 있을 때만 이 동작을 그린다"
+    },
+    "PushRegister": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "push.register"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["apns", "fcm"]
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "기기 푸시 토큰. relay 가 꼴을 본다 — apns 는 16진 64~200자, fcm 은 [A-Za-z0-9_:-] 4096자 이하. 어기면 error{protocol, ref: req}"
+        },
+        "env": {
+          "type": "string",
+          "enum": ["sandbox", "prod"],
+          "description": "APNs 서버(개발 서명 앱은 sandbox). fcm 은 prod"
+        },
+        "app_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,255}$",
+          "description": "앱 번들 ID·패키지 이름. relay 운영자 설정(APNs topic·FCM 패키지)과 다르면 error{protocol, ref: req}"
+        },
+        "off": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["chat", "group", "agents", "invite"]
+          },
+          "description": "#845 §7-55 이 기기가 끈 알림 갈래(없으면 다 켬). chat = 1:1 대화(머리 kind chat·group 없음), group = 그룹(머리 group 있음), agents = 에이전트 요청·답·거절(그룹 아님)과 own_alert, invite = 초대 카드. 끈 갈래는 알림만 안 보낸다(메시지는 그대로). recover_against 는 끌 수 없다. lodelai-features 에 push_prefs 가 있을 때만 싣는다(옛 relay 는 모르는 칸을 거절). 바꿀 때는 같은 push.register 를 다시 보낸다(기기당 한 행이라 덮어씀)"
+        }
+      },
+      "required": ["t", "req", "platform", "token", "env", "app_id"],
+      "additionalProperties": false,
+      "description": "C→S(모바일 검증 — 시험 relay 만). lodelai-features 에 push 가 있을 때만 보낸다(없는 relay 는 error{protocol}). 기기당 토큰 하나 — 새로 오면 바꾸고 salt·key 도 새로 만든다. 응답 push.ok{req, salt, key}. 기기 폐기 때 같이 지운다"
+    },
+    "PushUnregister": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "push.unregister"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        }
+      },
+      "required": ["t", "req"],
+      "additionalProperties": false,
+      "description": "C→S(모바일 검증). 이 기기의 푸시 토큰을 지운다(없어도 됨). 응답 push.ok{req}"
+    },
+    "PushOk": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "push.ok"
+        },
+        "req": {
+          "$ref": "#/$defs/BlobReq"
+        },
+        "salt": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$",
+          "description": "push.register 일 때만: 토큰 행 salt 16바이트(base64url 패딩 없음). 애플·구글에 나가는 대화 값 = HMAC-SHA256(salt, MLS group_id UTF-8) 앞 16바이트 소문자 hex — 앱·확장이 자기 그룹에 같은 계산을 해 대화를 찾는다"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "push.register 일 때만: 이 기기 push 키 32바이트(base64url 패딩 없음). 푸시 본문 p = base64(nonce 12 ‖ ChaCha20-Poly1305(key, nonce, aad \"lodelai-push-v1\", 1 ‖ id_len u8 ‖ msg_id ‖ msg_len u16 BE ‖ MLS 응용 메시지 ‖ 0 채움)), 길이는 512·1024·2048·3072자 중 하나. 키 저장소에만 둔다"
+        }
+      },
+      "required": ["t", "req"],
+      "additionalProperties": false,
+      "description": "S→C(모바일 검증). push.register·push.unregister 의 응답"
+    },
+    "DeviceName": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.name"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "이 기기의 이름 — 그 맥의 컴퓨터 이름(#490 묶음 28 §4). 빈 문자열 = 지우기. relay 는 NFC 로 맞추고 앞뒤 공백을 뺀 뒤 1~64자, 제어·숨은 문자(Cc·Cf·Zl·Zp)가 있으면 error{protocol}"
+        },
+        "os": {
+          "$ref": "#/$defs/DeviceOs",
+          "description": "판 15: 이 기기의 OS(기기 자신의 주장 — 표시용, 신뢰 근거 아님). relay 가 Lodelai-Features 에 device_os 를 알릴 때만 싣는다(옛 relay 는 모르는 칸을 거절). 앱은 접속할 때마다 이름과 함께 보낸다. 이름과 따로 바뀌어도 저장·방송한다"
+        }
+      },
+      "required": ["t", "name"],
+      "additionalProperties": false,
+      "description": "C→S(#490 묶음 28 §4). 앱이 기동·연결 때 이름이 바뀌었으면 보낸다. 같은 값이면 relay 는 저장·방송하지 않는다. 기기당 1시간 DEVICE_NAME_PER_HOUR 번을 넘으면 error{rate_limited}. 바뀌면 **그 사용자 본인 연결들에만** directory.update(이름은 DirectoryDevice.name — 요청한 사람 자신의 항목에만 실린다). 관리자 기기 목록·감사·로그에는 이름을 싣지 않는다. 기기 폐기·조직 나감 때 지운다"
+    },
+    "ServerStatusRequest": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "server.status"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 5, 원격 relay 의 관리자만 — 아니면 error{protocol}). 응답 server.status(ServerStatus). 계산값은 10초 캐시"
+    },
+    "ServerStatus": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "server.status"
+        },
+        "version": {
+          "type": "object",
+          "properties": {
+            "relay": {
+              "type": "string"
+            },
+            "protocol": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["relay", "protocol"],
+          "additionalProperties": false
+        },
+        "started_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "relay 프로세스 시작"
+        },
+        "now_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "서버 시계(앱이 시계 차를 셈)"
+        },
+        "backup": {
+          "type": "object",
+          "properties": {
+            "last_ok_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_attempt_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last": {
+              "type": "string",
+              "enum": ["ok", "failed", "none"]
+            },
+            "offsite": {
+              "type": "string",
+              "enum": ["ok", "failed", "skipped", "none"]
+            }
+          },
+          "required": ["last", "offsite"],
+          "additionalProperties": false
+        },
+        "disk": {
+          "type": "object",
+          "properties": {
+            "free_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["free_bytes", "total_bytes"],
+          "additionalProperties": false,
+          "description": "데이터 폴더가 있는 파일시스템"
+        },
+        "db_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files": {
+          "type": "object",
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "attachments + avatars"
+            },
+            "attachments": {
+              "$ref": "#/$defs/ServerStatusFileKind",
+              "description": "메시지 첨부(purpose message) — 받으면 지워진다"
+            },
+            "avatars": {
+              "$ref": "#/$defs/ServerStatusFileKind",
+              "description": "프로필 사진(purpose avatar) — 바꾸거나 지울 때까지 남는다"
+            }
+          },
+          "required": ["bytes", "count"],
+          "additionalProperties": false,
+          "description": "파일 저장 공간(묶음 15 §2.7·§23.7 b1c8075f): 보관 중인 암호문 합계 바이트(둘 다)·첨부 수·사진 수. 사람별·메시지별 숫자 없음"
+        },
+        "queue": {
+          "type": "object",
+          "properties": {
+            "pending": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "전달 대기 봉투 수만"
+            }
+          },
+          "required": ["pending"],
+          "additionalProperties": false
+        },
+        "devices": {
+          "type": "object",
+          "properties": {
+            "connected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["connected", "total"],
+          "additionalProperties": false
+        },
+        "members": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "조직 사람 수(내보낸 사람 제외)"
+        },
+        "mail": {
+          "type": "object",
+          "properties": {
+            "sent_today": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "UTC 하루"
+            },
+            "daily_limit": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_failed_ms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["sent_today", "daily_limit"],
+          "additionalProperties": false
+        },
+        "levels": {
+          "type": "object",
+          "properties": {
+            "backup": {
+              "type": "string",
+              "enum": ["ok", "warn", "bad"]
+            },
+            "disk": {
+              "type": "string",
+              "enum": ["ok", "warn", "bad"]
+            },
+            "queue": {
+              "type": "string",
+              "enum": ["ok", "warn", "bad"]
+            },
+            "mail": {
+              "type": "string",
+              "enum": ["ok", "warn", "bad"]
+            },
+            "files": {
+              "type": "string",
+              "enum": ["ok", "warn", "bad"],
+              "description": "묶음 15: 첨부 폴더 디스크 남은 공간 < --blob-min-free × 2 면 warn, < --blob-min-free 면 bad(files_disk_low)"
+            }
+          },
+          "required": ["backup", "disk", "queue", "mail"],
+          "additionalProperties": false
+        },
+        "level": {
+          "type": "string",
+          "enum": ["ok", "warn", "bad"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "backup_failed",
+              "backup_stale",
+              "offsite_failed",
+              "disk_low",
+              "queue_high",
+              "mail_quota",
+              "mail_failed",
+              "files_disk_low"
+            ]
+          }
+        }
+      },
+      "required": [
+        "t",
+        "version",
+        "started_ms",
+        "now_ms",
+        "backup",
+        "disk",
+        "db_bytes",
+        "queue",
+        "devices",
+        "members",
+        "mail",
+        "levels",
+        "level",
+        "reasons"
+      ],
+      "additionalProperties": false,
+      "description": "S→C(묶음 5). server.status 의 응답. 집계 숫자·시각만 — 주소·아이디·기기 id·메시지별 시각·접속 IP·백업 경로·버킷·키 없음. 기준은 relay 상수(m1-spec §17.3 표), 화면은 levels → 색, reasons → 문구"
+    },
+    "KeyPackagesPublish": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "key_packages.publish"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "KeyPackage(MLSMessage) TLS 바이트 base64url"
+          },
+          "maxItems": 100
+        },
+        "last_resort": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "KeyPackage(MLSMessage) TLS 바이트 base64url"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "0.2.5(g025f B): true 면 relay 가 이 기기의 남은 KeyPackage(보통·마지막 수단)를 같은 트랜잭션에서 지우고 이것으로 바꾼다 — 로컬 MLS 데이터를 잃고 같은 기기로 다시 붙은 첫 올리기. 앱은 lodelai-features 에 kp_reset 이 있을 때만 싣는다"
+        }
+      },
+      "required": ["t", "items"],
+      "additionalProperties": false,
+      "description": "C→S(묶음 22 §3): 이 기기의 KeyPackage 를 더 올린다(보통 것 합쳐 100 까지, last_resort 는 하나 — 새로 주면 바꿈). 각 KeyPackage 는 기기 Ed25519 로 서명됨·ciphersuite 0x0003·Credential device_id = 이 기기·lifetime ≤ 90일, 어기면 error{protocol}"
+    },
+    "KeyPackagesLow": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "key_packages.low"
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_resort": {
+          "const": false,
+          "description": "#846 이 기기에 마지막 수단 KeyPackage 가 없다 — 채울 때 마지막 수단도 같이 올린다. 없을 때만 싣고, 판 16 이상 연결에만 — 그 아래 연결엔 마지막 수단 없음 알림 자체를 보내지 않는다"
+        }
+      },
+      "required": ["t", "remaining"],
+      "additionalProperties": false,
+      "description": "S→C(§3): 이 기기의 보통 KeyPackage 가 20 아래 — 100 까지 채운다. 접속 때도 보통 것이 모자라거나 마지막 수단이 없으면 보낸다(#846 — 첫 묶음이 처리되기 전에 끊긴 기기의 받침)"
+    },
+    "KeyPackagesClaim": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "key_packages.claim"
+        },
+        "device_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/DeviceId"
+          },
+          "minItems": 1,
+          "maxItems": 200
+        }
+      },
+      "required": ["t", "device_ids"],
+      "additionalProperties": false,
+      "description": "C→S(§3): 기기마다 KeyPackage 하나를 가져간다(보통 것 먼저, 없으면 마지막 수단). 소비 상한(요청자 시간당 300·(요청자, 대상) 하루 10·대상 하루 합 50·주인 예외)을 넘으면 error{rate_limited}"
+    },
+    "KeyPackages": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "key_packages"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "device_id": {
+                "$ref": "message.schema.json#/$defs/DeviceId"
+              },
+              "key_package": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "description": "KeyPackage(MLSMessage) TLS 바이트 base64url"
+              }
+            },
+            "required": ["device_id", "key_package"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["t", "items"],
+      "additionalProperties": false,
+      "description": "S→C(§3): key_packages.claim 의 답. 조직 밖·모르는·폐기된·KeyPackage 없는 기기는 항목이 없다(이유를 가르지 않음 — 열거 없음)"
+    },
+    "GroupInfoGet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group_info.get"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        }
+      },
+      "required": ["t", "group"],
+      "additionalProperties": false,
+      "description": "C→S(§5b): 그 그룹의 최신 GroupInfo(external commit 용)"
+    },
+    "GroupInfo": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group_info"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "group_info": {
+          "$ref": "message.schema.json#/$defs/MlsPayload"
+        }
+      },
+      "required": ["t", "group"],
+      "additionalProperties": false,
+      "description": "S→C(§5b): group_info.get 의 답. 멤버 사용자의 기기가 아니거나 없으면 group 만(epoch·group_info 없음 — 같은 바이트, 열거 없음)"
+    },
+    "CommitAck": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "commit_ack"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commit_hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "SHA-256(Commit 의 MLSMessage TLS 바이트) base64url — relay 가 배달한 그 Commit 을 가리킨다"
+        }
+      },
+      "required": ["t", "group", "epoch", "commit_hash"],
+      "additionalProperties": false,
+      "description": "C→S(§4-7, group 종류만): pending Commit 을 StagedCommit 으로 처리했다(아직 merge 하지 않음). epoch = 그 Commit 의 epoch N"
+    },
+    "CommitFail": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "commit_fail"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commit_hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "SHA-256(Commit 의 MLSMessage TLS 바이트) base64url — relay 가 배달한 그 Commit 을 가리킨다"
+        }
+      },
+      "required": ["t", "group", "epoch", "commit_hash"],
+      "additionalProperties": false,
+      "description": "C→S(§4-7): pending Commit 처리 실패. 확정 뒤에 와도 받는다(관리자 줄 판정)"
+    },
+    "CommitFinal": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "commit_final"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commit_hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "SHA-256(Commit MLSMessage TLS 원 바이트) base64url — 같은 epoch 의 다른 Commit 을 가르는 데(§12-14)"
+        },
+        "group_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "사람 op(create 밖) Commit 이 확정되며 받은 그룹 순서(§12-13 ③). update 는 없음"
+        }
+      },
+      "required": ["t", "group", "epoch", "commit_hash"],
+      "additionalProperties": false,
+      "description": "S→C(§4-7): epoch N 의 pending Commit 확정 — 기기는 merge(N+1). 그 뒤 쥐어 두었던 N+1 응용 메시지가 온다"
+    },
+    "CommitVoid": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "commit_void"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commit_hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "SHA-256(Commit MLSMessage TLS 원 바이트) base64url — 같은 epoch 의 다른 Commit 을 가르는 데(§12-14)"
+        }
+      },
+      "required": ["t", "group", "epoch", "commit_hash"],
+      "additionalProperties": false,
+      "description": "S→C(§4-7): epoch N 의 pending Commit 무효 — StagedCommit 을 버리고 N 에 머문다. 보낸 기기의 N+1 응용 메시지는 nack commit_void 로 돌아간다"
+    },
+    "GroupAlert": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group_alert"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/GroupAddress"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["commit_unprocessed", "duty_stuck"],
+          "description": "commit_unprocessed = 확정된 Commit 을 둘 이상이 처리하지 못함. duty_stuck(#819, 판 14 그대로 — 옛 앱은 모르는 reason 이라 꼴 틀림으로 버린다) = 그룹 일(duty)의 Commit 이 3번 무효 — 하루마다 다시 한다, 끝나면 done:true 로 한 번 더"
+        },
+        "sender": {
+          "$ref": "message.schema.json#/$defs/PersonAddress",
+          "description": "그 Commit 을 보낸 사람(duty_stuck: 마지막으로 무효가 된 Commit 을 보낸 사람)"
+        },
+        "task": {
+          "type": "string",
+          "enum": ["add_device", "remove_device", "remove_user"],
+          "description": "duty_stuck 만: 멈춘 일"
+        },
+        "subject": {
+          "$ref": "message.schema.json#/$defs/PersonAddress",
+          "description": "duty_stuck 만: 그 일의 대상 사람(기기 일이면 그 기기의 주인)"
+        },
+        "subject_device": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "duty_stuck 만, 기기 일(add_device·remove_device): 대상 기기 id"
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/PersonAddress"
+          },
+          "maxItems": 50,
+          "description": "duty_stuck 만: 마지막 무효에서 그 Commit 을 처리하지 못했다고 한(fail) 사람"
+        },
+        "stale_clients": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/PersonAddress"
+          },
+          "maxItems": 50,
+          "description": "duty_stuck 만: failed 중 잎 기기의 hello.v 가 지금 판보다 낮거나 모르는 사람(업데이트가 할 일), failed 순서"
+        },
+        "done": {
+          "type": "boolean",
+          "description": "duty_stuck 만: 그 일이 끝났다(줄을 거둔다). 줄 키는 (group, task, subject_device 또는 subject)"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "commit_unprocessed: 확정 뒤 처리하지 못했다고 한 사람 수. duty_stuck: 그 일의 무효 수"
+        },
+        "acked": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/PersonAddress"
+          },
+          "description": "그 Commit 을 처리했다고 한(ack) 사람"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commit_hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "required": ["t", "group", "reason", "sender", "n", "acked", "epoch", "commit_hash"],
+      "additionalProperties": false,
+      "description": "S→C(묶음 22 §4-7·§12-20): 확정된 Commit 을 서로 다른 둘 이상이 처리하지 못함 — 그룹 관리자 기기에만, (group, commit_hash)마다 한 번(꺼져 있으면 30일 저장 뒤 접속 때 결과 다음). 서명 없는 서버 주장 — 코어는 조용한 줄만 그리고 상태를 바꾸지 않는다"
+    },
+    "Duty": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "duty"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/MlsGroupId"
+        },
+        "task": {
+          "type": "string",
+          "enum": ["add_device", "remove_device", "remove_user"]
+        },
+        "subject": {
+          "type": "string",
+          "description": "add_device·remove_device = device_id, remove_user = 사람 주소(org_left)"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["t", "group", "task", "subject", "rank"],
+      "additionalProperties": false,
+      "description": "S→C(§7): 접속한 기기에 줄 순서로 맡기는 일. rank 0 은 바로, k 는 k × 2분 뒤에도 안 됐으면(15 이상은 30분). relay 가 순서를 섞는다"
+    },
+    "RejoinNeeded": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "rejoin_needed"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/MlsGroupId"
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["t", "groups"],
+      "additionalProperties": false,
+      "description": "S→C(§5a): 이 기기 앞 Handshake 가 보관 상한(2 000개·64 MiB·30일)을 넘어 비웠다 — 그 그룹마다 external commit 으로 다시 들어간다"
+    },
+    "DeviceRecover": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#577 묶음 32, 메일 확인 끊기 — 계약 6490433889). 요청 기기가 pending(내 사용자의 잎 자격 = 뿌리 사슬에 들지 않음)이고 요청 기기보다 먼저 등록된 폐기 안 된 내 기기가 하나 이상일 때만. relay 는 at = 지금 + recovery_wait(24h)로 걸고 요청 기기에 device.recover_scheduled, 대상 기기마다 device.recover_against(꺼져 있으면 다음 인증 직후), 같은 조직에 directory.update, 계정 메일. 같은 요청 기기의 재요청은 멱등(같은 recover_scheduled). 거절 = error{recover_refused, reason: trusted|no_older|cooldown|exhausted, until?}(연결 유지), 다른 기기가 이미 건 걸기가 있으면 error{protocol}. 대상이 켜지거나 접속하는 것만으로는 아무 영향이 없다(막기를 눌러야만 멈춤). 요청 기기가 잎 자격을 얻는 순간(certify·폐기마다 다시 계산) 걸기는 끝난다(certified)"
+    },
+    "DeviceRecoverCancel": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_cancel"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#577). 건 요청 기기만 — 걸기를 지우고 요청 기기에 device.recover_canceled{reason: requester, retry_at}, 대상에 device.recover_against_ended{reason: canceled}, directory.update, 메일. 걸기가 없거나 요청 기기가 아니면 error{recover_refused, reason: not_scheduled}. 그 뒤 24h 쿨다운"
+    },
+    "DeviceRecoverBlock": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_block"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#577). 그 걸기의 대상 기기만 — 걸기가 없거나 끝났으면 error{recover_refused, reason: ended}, 대상이 아니면 reason: not_target. 걸기를 끝내고(실행과 한 트랜잭션 순서) 막기 기록(쿨다운·30일 상한 집계), 요청 기기에 device.recover_canceled{reason: blocked, by, at, retry_at}, 모든 대상에 device.recover_against_ended{reason: blocked}, directory.update, 메일. 앱은 Tauri IPC 에서만 보낸다(에이전트가 못 누름)"
+    },
+    "DeviceRecoverScheduled": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_scheduled"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "끊길 시각(건 시각 + 24h)"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/DeviceId"
+          },
+          "minItems": 1,
+          "description": "끊길 옛 기기(요청 기기보다 먼저 등록된 내 폐기 안 된 기기 전부 — 그중 지금 끊기로 빠진 기기는 뺀다)"
+        }
+      },
+      "required": ["t", "at", "targets"],
+      "additionalProperties": false,
+      "description": "S→C(#577). device.recover 의 응답(멱등 재요청에도 같은 값)"
+    },
+    "DeviceRecoverCanceled": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_canceled"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["requester", "blocked", "certified"],
+          "description": "requester = 건 쪽 취소, blocked = 대상 기기가 막음, certified = 요청 기기가 잎 자격을 얻음(뿌리 쪽 device.certify — '내가 추가함'·지금 끊기) — 정상 경로라 쿨다운·메일 없음"
+        },
+        "by": {
+          "$ref": "message.schema.json#/$defs/DeviceId",
+          "description": "blocked 일 때 막은 기기"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "blocked 일 때 막은 시각"
+        },
+        "retry_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "다시 걸 수 있는 시각(requester·blocked — 쿨다운 끝, 30일 상한이면 그 창이 풀리는 시각). certified 엔 없음"
+        }
+      },
+      "required": ["t", "reason"],
+      "additionalProperties": false,
+      "description": "S→C(#577). 요청 기기에 — 걸기가 실행 전에 끝났다. 연결돼 있을 때만(디렉터리 me 항목의 recovery 가 같은 상태를 싣는다)"
+    },
+    "DeviceRecoverAgainst": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_against"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "이 기기가 끊길 시각"
+        },
+        "requester": {
+          "$ref": "message.schema.json#/$defs/DeviceId",
+          "description": "건 새 기기(지문은 받는 쪽이 device_id 로 계산, 이름·추가 시각은 디렉터리 me.devices)"
+        }
+      },
+      "required": ["t", "at", "requester"],
+      "additionalProperties": false,
+      "description": "S→C(#577). 걸기의 대상 기기에 — 막기 카드 재료. 걸 때 연결돼 있으면 바로, 걸기가 살아 있는 동안 인증 직후마다 다시 보낸다(앱은 저장하지 않는다)"
+    },
+    "DeviceRecoverAgainstEnded": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recover_against_ended"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["canceled", "blocked", "certified"],
+          "description": "canceled = 건 쪽 취소·요청 기기가 사라짐, blocked = 대상 중 하나가 막음, certified = 요청 기기가 잎 자격을 얻음"
+        }
+      },
+      "required": ["t", "reason"],
+      "additionalProperties": false,
+      "description": "S→C(#577). 대상 기기에 — 막기 카드를 거둔다. 연결돼 있을 때만(꺼져 있었으면 다음 인증 때 recover_against 가 오지 않는 것으로 안다)"
+    },
+    "DeviceRecovered": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "device.recovered"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/DeviceId"
+          },
+          "minItems": 1,
+          "description": "끊긴 옛 기기"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "끊은 시각"
+        }
+      },
+      "required": ["t", "targets", "at"],
+      "additionalProperties": false,
+      "description": "S→C(#577). 요청 기기에 — at 에 relay 가 대상을 모두 끊었다(device.revoked{by: recovery} 와 같은 폐기, 증명 없음). 이어서 directory.update. 연결돼 있을 때만(디렉터리 me 항목 recovery{state: done})"
+    },
+    "Look": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "character"
+            },
+            "seed": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,32}$",
+              "description": "캐릭터 그림의 seed — 앱이 무작위 16바이트 base64url(22자)로 만든다(주소·이메일에서 뽑지 않음). 그림은 받는 앱이 이 seed 로 만든다(받은 SVG 를 그리지 않음)"
+            },
+            "tone": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "description": "캐릭터 뒤 바탕 색 번호(person-tile 1..6). 없으면 첫 글자 원과 같은 해시 색"
+            }
+          },
+          "required": ["kind", "seed"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "initial"
+            },
+            "tone": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "description": "첫 글자 원의 바탕 색 번호(person-tile 1..6)"
+            }
+          },
+          "required": ["kind", "tone"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "#874 프로필 기본 이미지(사람, 조직 범위). 사진(avatar)이 있으면 사진이 먼저다 — 그리는 순서 avatar → character → initial → 칸 없음(첫 글자 + 해시 색)"
+    },
+    "DirectoryRecovery": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["scheduled", "blocked", "canceled", "exhausted", "done"],
+          "description": "scheduled = 걸림(at 에 끊김), blocked = 대상이 막음(at = 다시 걸 수 있는 시각, 그때까지), canceled = 건 쪽 취소(at = 다시 걸 수 있는 시각, 그때까지), exhausted = 막기 30일 3번(at = 풀리는 시각, 받는 사람 자신의 항목에만), done = 끊김(24h 동안, at = 끊은 시각). 걸기가 없으면 recovery 를 뺀다"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "scheduled: 끊길 시각 / blocked·canceled·exhausted: 다시 걸 수 있는 시각 / done: 끊은 시각"
+        },
+        "requester": {
+          "$ref": "message.schema.json#/$defs/DeviceId",
+          "description": "건 새 기기"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "message.schema.json#/$defs/DeviceId"
+          },
+          "description": "끊길(끊긴) 옛 기기 — 받는 사람 자신과 같은 조직 관리자(#737)의 항목에만"
+        },
+        "blocked_by": {
+          "type": "object",
+          "properties": {
+            "device_id": {
+              "$ref": "message.schema.json#/$defs/DeviceId"
+            },
+            "at": {
+              "$ref": "message.schema.json#/$defs/Timestamp"
+            }
+          },
+          "required": ["device_id", "at"],
+          "additionalProperties": false,
+          "description": "blocked: 막은 옛 기기·시각 — 받는 사람 자신의 항목에만"
+        },
+        "postponed": {
+          "type": "boolean",
+          "description": "#737 scheduled: 대상(옛 기기)이 걸기 뒤 붙어서 한 번 미뤘다(at = 미룬 시각, 그때는 붙어도 끊는다). 미루지 않았으면 뺀다. 판 13 아래 연결의 전체 directory 에선 뺀다"
+        }
+      },
+      "required": ["state"],
+      "additionalProperties": false,
+      "description": "#577 메일 확인 끊기 상태(사용자 하나에 하나). 같은 조직이 받는다 — 동료는 state·at·requester 만(대화 기록 줄 재료), 받는 사람 자신은 전부. 계약 6490433889 §3·§5"
+    },
+    "Frame": {
+      "oneOf": [
+        {
+          "$ref": "ws.schema.json#/$defs/Hello"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Challenge"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Auth"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Ready"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Send"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Ack"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Nack"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Deliver"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeliveredAck"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Status"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/SessionPublish"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/SessionUnpublish"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DirectoryList"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Directory"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DirectoryUpdate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ProfileUpdate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgUpdate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/TeamCreate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/TeamUpdate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/TeamDelete"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/InviteCreate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/InviteCreated"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRegister"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRegistered"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRevoke"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceCertify"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRevoked"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PresenceSet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Typing"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/TypingNotice"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OwnStream"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OwnStreamNotice"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OwnAlert"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OwnLive"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OwnLiveWant"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupsList"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Groups"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupsReplay"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/BlobReserve"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/BlobReserved"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/BlobGet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/BlobTicket"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/BlobFetched"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Ping"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Pong"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Error"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgAdmin"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/MemberRemove"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/MemberRevokeDevice"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/MemberLeave"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgLeave"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceName"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PushRegister"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PushUnregister"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PushOk"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PushLive"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PushLiveOk"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ServerStatusRequest"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/KeyPackagesPublish"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/KeyPackagesLow"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/KeyPackagesClaim"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/KeyPackages"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInfoGet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInfo"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/CommitAck"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/CommitFail"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/CommitFinal"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/CommitVoid"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupAlert"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/Duty"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/RejoinNeeded"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ServerStatus"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecover"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverCancel"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverBlock"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverScheduled"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverCanceled"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverAgainst"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecoverAgainstEnded"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/DeviceRecovered"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkRequest"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkSent"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkRemove"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkUpdate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkWithdraw"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkUnblock"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ContactLinkGet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ContactLinkRotate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ContactLink"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/LinkJoin"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgInvite"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgInviteSent"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgInviteAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInvite"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInviteSent"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInviteAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ContactLinkPreview"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ContactLinkPreviewAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgCodeCheck"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgCodeCheckAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgExternalPreview"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgExternalPreviewAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgJoin"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgJoinAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgCreate"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgCreateAnswer"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/MuteSet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ListPut"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/ListDelete"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/PinSet"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/OrgInviteWithdraw"
+        },
+        {
+          "$ref": "ws.schema.json#/$defs/GroupInviteWithdraw"
+        }
+      ],
+      "description": "t 로 판별"
+    },
+    "PublicKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "base64url(패딩 없음) 32바이트 공개키"
+    },
+    "DirectoryRevocation": {
+      "type": "object",
+      "properties": {
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "added_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "그 기기 등록 시각(뿌리 = 후보 중 가장 이른 것)"
+        },
+        "ed25519": {
+          "$ref": "#/$defs/PublicKey",
+          "description": "그 기기가 서명한 devcert·devrevoke 검증"
+        },
+        "x25519": {
+          "$ref": "#/$defs/PublicKey",
+          "description": "그 기기로 들어오는 devcert 의 서명 입력"
+        },
+        "certs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signer": {
+                "$ref": "message.schema.json#/$defs/DeviceId"
+              },
+              "sig": {
+                "$ref": "#/$defs/DeviceCertSig"
+              }
+            },
+            "required": ["signer", "sig"],
+            "additionalProperties": false
+          },
+          "description": "그 기기로 들어오는 devcert(증명 폐기 뒤에도 남음, e73b25bd). 없으면 생략"
+        },
+        "at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "증명 시각(서명 입력 그대로)"
+        },
+        "signer": {
+          "$ref": "message.schema.json#/$defs/DeviceId",
+          "description": "증명에 서명한 같은 사용자의 기기(폐기되는 그 기기 자신일 수 있음)"
+        },
+        "sig": {
+          "$ref": "#/$defs/DeviceRevokeSig"
+        }
+      },
+      "required": ["device_id", "added_at", "ed25519", "x25519", "at", "signer", "sig"],
+      "additionalProperties": false,
+      "description": "증명 있는 폐기 하나(묶음 22 §12-11 ⓐ). 받는 쪽은 서명자가 같은 사용자 기기이고 서명이 맞을 때만 마디로 센다"
+    },
+    "DeviceRevokeSig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$",
+      "description": "Ed25519(lodelai-devrevoke-v1 ‖ 0 ‖ server ‖ 0 ‖ 폐기되는 device_id ‖ 0 ‖ at) — 서명자 기기 서명 키(묶음 22 §12-11 ⓐ)"
+    },
+    "DeviceOs": {
+      "type": "string",
+      "enum": ["macos", "windows", "linux", "ios", "android"],
+      "description": "기기가 스스로 알린 OS(판 15). 화면은 ios·android → '휴대폰', macos → '맥', 그 밖 → '이름 없는 기기' 꼴의 대신 글"
+    },
+    "DirectoryDevice": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "그 기기가 마지막으로 붙은 hello.v(앱 판, #598 ②). 보내는 코어가 10 전용 칸(no_reply)을 실을지 가른다 — 받을 기기가 모두 10 이상일 때만. relay 는 판 10 이상 연결에만 이 칸을 싣는다(9 앱의 DirectoryDevice 는 additionalProperties false). 모르면(그 판 뒤로 안 붙음) 없음 = 9 로 본다. 앱 판 정도라 동료에게 보여도 됨"
+        },
+        "device_id": {
+          "$ref": "message.schema.json#/$defs/DeviceId"
+        },
+        "device_pubkeys": {
+          "type": "object",
+          "properties": {
+            "ed25519": {
+              "$ref": "#/$defs/PublicKey"
+            },
+            "x25519": {
+              "$ref": "#/$defs/PublicKey"
+            },
+            "x25519_sig": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$",
+              "description": "Ed25519(lodelai-xkey-v1 ‖ 0 ‖ device_id ‖ 0 ‖ x25519 32B) — x25519 공개키를 기기 키에 묶는 서명(e2e-envelope.md §2). 피어는 device_id 재계산과 함께 검증하고 틀리면 그 기기를 버린다. M2 에서 필수(relay 가 등록 때 강제)"
+            }
+          },
+          "required": ["ed25519", "x25519"],
+          "additionalProperties": false
+        },
+        "added_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "서버가 이 기기를 등록한 시각(#339 — 내 기기 목록의 '{date} 추가', 서명하지 않는 메타데이터)"
+        },
+        "last_auth_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "#577: 이 기기가 마지막으로 relay 에 인증 접속한 시각(ms 정밀도 — 인증 때와 마지막 연결이 끊길 때 씀). 지금 연결 중이면 그 디렉터리를 만든 relay 시각. **받는 사람 자신의 항목에만** 싣는다(last_seen_at 과 같은 규칙). 앱의 seen_since_me(연결 중 또는 이 값 ≥ 내 등록 시각) 재료. 인증한 적 없는 기기 = 없음"
+        },
+        "os": {
+          "$ref": "#/$defs/DeviceOs",
+          "description": "판 15: 그 기기가 device.name 으로 알린 OS. **받는 사람 자신의 항목에만** 싣는다(name 과 같은 규칙). relay 는 판 15 이상 연결에만 싣는다. 알리지 않은 기기(옛 맥 앱) = 없음"
+        },
+        "away": {
+          "type": "string",
+          "enum": ["sleep", "quit", "lost"],
+          "description": "#870 맥 잠듦: 이 기기의 마지막 연결이 어떻게 끝났나. sleep = 기기가 잠들기 전 닫음, quit = 앱을 끔, lost = 그 밖(이유 없이 끊김·유휴·relay 재시작). 기기는 WebSocket close frame(code 1000)의 reason 에 글자 그대로 `sleep`·`quit` 를 싣는다 — 그 밖의 reason·없음은 lost. **받는 사람 자신의 항목에만**, 지금 붙어 있지 않은 기기에만 싣는다(붙어 있으면 없음). hello.away 로 붙은 연결에만. 없으면(옛 relay·붙은 적 없음) 모름. 언제 끊겼는지는 last_auth_at"
+        },
+        "online": {
+          "type": "boolean",
+          "description": "모바일 가입 '맥 꺼짐'(판 15): 이 기기가 지금 relay 에 붙어 있나(그 디렉터리를 만든 때). **받는 사람 자신의 항목에만** 싣는다(last_seen_at 과 같은 규칙). relay 는 판 15 이상 연결에만 싣는다(옛 앱의 DirectoryDevice 는 additionalProperties false). 내 기기가 처음 붙거나 마지막 연결이 끊기면 승인 전 내 기기에 directory.update 가 간다. 없으면(옛 relay) 모름"
+        },
+        "last_seen_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "이 기기가 마지막으로 접속한 날(묶음 22 §12-27 ⓑ) — 날 단위(UTC 날짜의 0시), 날짜가 바뀐 접속에서만 갱신·방송. **받는 사람 자신의 항목에만** 싣는다(동료의 접속 시각은 보내지 않음, 묶음 28 §4 기기 이름과 같은 규칙). 화면이 '오래 안 쓴 내 기기'(30일)를 센다. 접속한 적 없는 기기(이 값 전 relay 에서 등록) = 없음. 서명하지 않는 메타데이터"
+        },
+        "certs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "signer": {
+                "$ref": "message.schema.json#/$defs/DeviceId"
+              },
+              "sig": {
+                "$ref": "#/$defs/DeviceCertSig"
+              }
+            },
+            "required": ["signer", "sig"],
+            "additionalProperties": false
+          },
+          "description": "같은 사용자의 다른 기기가 이 기기에 한 내 기기 서명(#393, e2e-envelope §7a — device.certify). 폐기 안 된 서명자의 것만, 없으면 생략. 피어는 서명자가 자기가 믿는 그 사용자의 기기일 때만 §3 식으로 검증해 자동 신뢰한다"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "기기 이름(#490 묶음 28 §4, device.name — 그 맥의 컴퓨터 이름). **요청한 사람 자신의 사용자 항목에만** 싣는다(실명이 들어가기 쉬워 동료에게는 보내지 않음). 없거나 옛 앱이면 생략 — 화면은 '내 다른 맥의 {세션} 세션'"
+        }
+      },
+      "required": ["device_id", "device_pubkeys"],
+      "additionalProperties": false,
+      "description": "폐기되지 않은 기기 하나의 공개키(#132). 수신 코어는 ed25519 로 device_id 를 재계산해 대조하고, 어긋나면 이 항목을 버린다"
+    },
+    "LinkRequest": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.request"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답 link.sent 에 그대로 싣는 짝 값"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "정확한 이메일(정규화해 비교). 계정이 있든 없든 답은 같다"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+          "description": "정확한 아이디. 없는 아이디면 답에 unknown"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#845, 기능 표시 contacts). 연락 요청 — email·user 중 정확히 하나(둘 다·둘 다 없음은 error{protocol}). 찾기는 정확한 이메일 또는 정확한 아이디만(목록·이름 찾기 없음). 답은 늘 link.sent — 이메일은 계정 있음·없음·막힘·이미 연락처가 모두 같은 바이트. 상대가 이미 나에게 요청했으면 바로 수락. 결과는 두 사람 directory.update"
+    },
+    "LinkSent": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.sent"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "unknown": {
+          "const": true,
+          "description": "user 로 물었는데 그런 아이디가 없다(이메일 요청엔 없음)"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845) link.request·link.join·link.unblock 의 답"
+    },
+    "LinkAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.answer"
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "link_requests.incoming 의 id"
+        },
+        "answer": {
+          "enum": ["accept", "decline", "block"]
+        }
+      },
+      "required": ["t", "id", "answer"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 받은 연락 요청에 답. 거절·차단은 조용하다(요청한 쪽엔 만료까지 기다림으로 보임). 차단은 그 사람의 새 요청·글도 막는다. 답 프레임 없음 — 결과는 directory.update. 모르는·끝난 id 는 무시"
+    },
+    "LinkRemove": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.remove"
+        },
+        "peer": {
+          "$ref": "message.schema.json#/$defs/PersonAddress"
+        },
+        "block": {
+          "type": "boolean",
+          "description": "#845 §7-8: 참이면 빼면서 막는다 — 양쪽 줄과 두 방향 걸린 요청을 지우고 그 사람의 새 요청·글을 막는다(상대에겐 빼기와 같게 보임)"
+        }
+      },
+      "required": ["t", "peer"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 연락처에서 빼기(양쪽 줄을 지움), block 이면 빼면서 막기. 답 프레임 없음 — 결과는 두 사람 directory.update"
+    },
+    "LinkUpdate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.update"
+        },
+        "peer": {
+          "$ref": "message.schema.json#/$defs/PersonAddress"
+        },
+        "task_ok": {
+          "type": "boolean",
+          "description": "이 연락처에게 task 를 맡기는 것을 연다(없으면 question 까지)"
+        }
+      },
+      "required": ["t", "peer", "task_ok"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 연락처 하나의 설정. 답 프레임 없음 — 결과는 두 사람 directory.update"
+    },
+    "ContactLinkGet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "contact_link.get"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#845, 기능 표시 contacts) 내 초대 링크 토큰 — 살아 있는 것이 있으면 늘 같은 토큰, 없으면 만든다. 답 contact_link"
+    },
+    "ContactLinkRotate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "contact_link.rotate"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 내 초대 링크 다시 만들기 — 옛 토큰은 끝난다(그 링크로 들어오면 조용히 link.sent 만). 답 contact_link"
+    },
+    "ContactLink": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "contact_link"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{16,128}$",
+          "description": "초대 링크의 토큰(링크 fragment 에 실림 — relay 는 해시로만 찾는다)"
+        }
+      },
+      "required": ["t", "token"],
+      "additionalProperties": false,
+      "description": "S→C(#845) contact_link.get·rotate 의 답. 만료 없음·여러 번 쓰임"
+    },
+    "LinkJoin": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.join"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{16,128}$",
+          "description": "초대 링크의 토큰(링크 fragment 에 실림 — relay 는 해시로만 찾는다)"
+        }
+      },
+      "required": ["t", "token"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 남의 초대 링크로 연락처 맺기(요청·수락 없이 바로, 하루 셈 없음). 답은 늘 link.sent — 모르는·끝난 토큰·내 링크·막힌 사이·이미 연락처도 같은 바이트. 결과는 두 사람 directory.update"
+    },
+    "LinkWithdraw": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.withdraw"
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "link_requests.outgoing 의 id"
+        }
+      },
+      "required": ["t", "id"],
+      "additionalProperties": false,
+      "description": "C→S(#845) 내가 보낸 요청 거두기(아이디·이메일 요청, 기다림으로 보이는 것 모두). 상대에게 알리지 않고 하루 요청 셈도 돌려주지 않는다. 답 프레임 없음 — 결과는 나에게 directory.update, 아이디 요청이면 상대에게도 directory.update 한 번(받은 요청 줄이 바로 빠짐, 기다림·거절당함 가르지 않음). 모르는 id 는 무시"
+    },
+    "LinkUnblock": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "link.unblock"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답 link.sent 에 그대로 싣는 짝 값"
+        },
+        "peer": {
+          "$ref": "message.schema.json#/$defs/PersonAddress"
+        }
+      },
+      "required": ["t", "peer"],
+      "additionalProperties": false,
+      "description": "C→S(관문 A6) 내가 막은 사람 풀기 — 막음 줄만 지우고 연락처·요청은 만들지 않는다(푼 뒤 '지금 연락처 아님'). 답은 link.sent(req 맞춤) — 막은 적 없는·모르는 peer·나 자신도 같은 답(끝 상태가 '막지 않음'이면 성공, 아이디가 있는지 새지 않게). 실패는 error{internal, ref=req}. 나에게만 directory.update, 상대엔 아무것도 안 감. relay features link_unblock 이 있을 때만 보낸다"
+    },
+    "LinkRequests": {
+      "type": "object",
+      "properties": {
+        "incoming": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "message.schema.json#/$defs/Ulid"
+              },
+              "address": {
+                "$ref": "message.schema.json#/$defs/PersonAddress"
+              },
+              "display": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 254
+              },
+              "at": {
+                "$ref": "message.schema.json#/$defs/Timestamp"
+              }
+            },
+            "required": ["id", "address", "at"],
+            "additionalProperties": false
+          },
+          "description": "받은 요청(만료 전). 수락 전이라 아바타·기기는 싣지 않는다"
+        },
+        "outgoing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "message.schema.json#/$defs/Ulid"
+              },
+              "to": {
+                "type": "string",
+                "maxLength": 254,
+                "description": "내가 친 이메일 또는 아이디 그대로"
+              },
+              "at": {
+                "$ref": "message.schema.json#/$defs/Timestamp"
+              }
+            },
+            "required": ["id", "to", "at"],
+            "additionalProperties": false
+          },
+          "description": "보낸 요청(만료 전). 상대가 거절·차단했어도 만료까지 여기 남는다 — 상대의 아무것도 싣지 않는다"
+        }
+      },
+      "required": ["incoming", "outgoing"],
+      "additionalProperties": false,
+      "description": "#845 연락 요청. contacts 연결에만"
+    },
+    "DirectoryPeopleItem": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "$ref": "message.schema.json#/$defs/PersonAddress"
+        },
+        "display": {
+          "type": "string"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryDevice"
+          },
+          "description": "이 사람의 기기 공개키(TOFU 고정·지문 경고는 수신 코어, protocol §7 기기 공개키 배포)"
+        },
+        "revocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DirectoryRevocation"
+          },
+          "description": "증명 있는 폐기(devrevoke, 묶음 22 §2b 3·§12-11 ⓐ) — 뿌리 계산의 고리. 개수 상한 없음, 없으면 생략"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "확인한 이메일(hosted, #355 — 같은 조직에만 나간다, 서명하지 않는 메타데이터). M1 로컬엔 없다"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "이 사람이 고른 팀 id(#355, 0~여러 개). 팀 이름은 프레임의 teams. M1 로컬엔 없다"
+        },
+        "avatar": {
+          "$ref": "message.schema.json#/$defs/BlobId",
+          "description": "프로필 사진 blob(묶음 15, ADR 0009 §8 — 256 PNG, 암호화 안 함, 같은 조직만 blob.get). 없으면 생략"
+        },
+        "look": {
+          "type": "object",
+          "description": "#874 고른 기본 이미지 — 꼴은 $defs/Look. 없으면 생략. hello.look 없이 붙은 연결엔 relay 가 뺀다(옛 앱은 모르는 칸을 거절). 받는 쪽은 Look 으로 읽어 보고 못 읽으면(앞으로 더할 kind·규칙 밖 값) 이 칸만 버린다 — 디렉터리 전체를 버리지 않게 여기선 꼴을 묶지 않는다(설계 #874 §6)"
+        },
+        "recovery": {
+          "$ref": "#/$defs/DirectoryRecovery"
+        },
+        "online": {
+          "type": "boolean",
+          "description": "접속 중(묶음 14 B1): 폐기 안 된 기기의 인증된 ws 연결이 하나라도 있음(끊김은 60초 유예). 마지막 접속 시각은 없다. 이 사람이 presence.set{share: false} 면 싣지 않고, 디렉터리를 받는 사람이 share: false 면 누구의 것도 싣지 않는다(맞교환)"
+        },
+        "invited_by_me": {
+          "const": true,
+          "description": "디렉터리를 받는 사람이 이 사람을 초대했다(초대 가입의 invites.created_by, M1 결함 ① §17.3). 받는 사람마다 계산하고 아니면 생략 — 누가 누구를 초대했는지는 조직에 퍼지지 않는다. 앱은 contacts 에 행이 없을 때만 source invite 로 넣는다"
+        },
+        "invited_me": {
+          "const": true,
+          "description": "이 사람이 디렉터리를 받는 사람을 초대했다(받는 사람의 users.invited_by, §17.3 invited_by_me 의 짝). 받는 사람마다 계산하고 아니면 생략, 그 사람이 디렉터리에 없으면 싣지 않는다. 앱은 contacts 에 행이 없을 때만 source invite 로 넣는다 — 새 기기도 처음 디렉터리로 초대한 사람을 안다"
+        },
+        "task_ok": {
+          "const": true,
+          "description": "#845 links 항목에만: 내가 이 연락처에게 task 를 열었다. 아니면 생략"
+        },
+        "task_ok_for_me": {
+          "const": true,
+          "description": "#845 links 항목에만: 이 연락처가 나에게 task 를 열었다(보내는 코어가 없으면 question 으로 보낸다). 아니면 생략"
+        },
+        "linked_at": {
+          "$ref": "message.schema.json#/$defs/Timestamp",
+          "description": "#880 links 항목에만: 연락처가 된(수락) 시각. 대화 없는 연락처를 이 시각으로 줄 세운다(맥·휴대폰 같은 순서). 옛 relay 면 없음"
+        },
+        "joined_my_link": {
+          "const": true,
+          "description": "#886 ⑧ links 항목에만: 디렉터리를 받는 사람의 초대 링크로 이 사람이 들어와 연락처가 됐다(link.join). 요청·수락으로 된 연락처·들어온 쪽 항목엔 없음. 앱은 linked_at 이 24시간 안이고 아직 안 알린 사람이면 알림 한 번(첫 디렉터리는 기준선)"
+        }
+      },
+      "required": ["address", "devices"],
+      "additionalProperties": false
+    },
+    "OrgInvite": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.invite"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답 org.invite.sent 에 그대로 싣는 짝 값"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "초대할 이메일(정규화해 비교)"
+        }
+      },
+      "required": ["t", "email"],
+      "additionalProperties": false,
+      "description": "C→S(#845 ④, 기능 표시 contacts). 조직 관리자가 이메일로 초대 — 관리자가 아니면 error{protocol}. 답은 늘 org.invite.sent(칸 없음): 개인 계정(받는 사람 디렉터리 org_invites 에 카드)·다른 조직 계정(받을 수 없는 카드, 30일 조용히 만료)·가입 안 함(그 이메일에 묶인 30일 초대, 메일)·같은 조직이 모두 같은 바이트. 관리자 발급 상한(시간당, invite.create 와 같은 통)을 넘으면 error{rate_limited, until}"
+    },
+    "OrgInviteSent": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.invite.sent"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 ④) org.invite 의 답(칸 없음 — 받는 사람의 사정을 드러내지 않는다)"
+    },
+    "OrgInviteAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.invite.answer"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "org_invites 의 id"
+        },
+        "answer": {
+          "enum": ["accept", "decline"]
+        }
+      },
+      "required": ["t", "id", "answer"],
+      "additionalProperties": false,
+      "description": "C→S(#845 ④) 받은 조직 초대에 답. 답 프레임 없음, 거절·모르는·끝난·받을 수 없는 id 는 조용하다. 수락하면(개인 공간일 때만) 그 조직으로 옮기고 내 공개 에이전트 범위 '조직 전체'를 '나만'으로 좁힌 뒤, 내 연결 모두에 error{org_changed} 를 보내고 닫는다 — 앱은 곧바로 다시 붙는다"
+    },
+    "OrgInvites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "message.schema.json#/$defs/Ulid"
+          },
+          "org_name": {
+            "type": "string"
+          },
+          "by_display": {
+            "type": "string",
+            "description": "초대한 관리자 표시 이름"
+          },
+          "at": {
+            "$ref": "message.schema.json#/$defs/Timestamp"
+          },
+          "blocked": {
+            "const": "other_org",
+            "description": "이미 다른 조직에 들어 있어 받을 수 없다(닫기만)"
+          },
+          "org_color": {
+            "$ref": "#/$defs/OrgColor",
+            "description": "그 조직 고유색. 없으면 생략"
+          }
+        },
+        "required": ["id", "org_name", "at"],
+        "additionalProperties": false
+      },
+      "description": "#845 ④ 받은 조직 초대(만료 전, 조직마다 가장 최근 하나). contacts 연결에만"
+    },
+    "GroupInvite": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group.invite"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답 group.invite.sent 에 그대로 싣는 짝 값"
+        },
+        "group": {
+          "$ref": "message.schema.json#/$defs/GroupAddress"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "정확한 이메일(정규화해 비교)"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+          "description": "정확한 아이디"
+        }
+      },
+      "required": ["t", "group"],
+      "additionalProperties": false,
+      "description": "C→S(#845 ④, 기능 표시 contacts). 그룹의 지금 멤버가 다른 사람을 그룹에 초대 — email·user 중 정확히 하나(아니면 error{protocol}), 멤버가 아니면 error{protocol}. 답은 늘 group.invite.sent: 이미 닿는 사람(같은 조직·연락처)은 카드 없이 바로 그 그룹 groups.items[].joining 에, 가입한 사람은 받는 사람 디렉터리 group_invites 에 카드, 가입 안 한 이메일은 메일. 막힌 사이·이미 멤버·이미 초대됨은 일 없음(같은 바이트). 카드·메일은 연락 요청 셈(하루·걸린 요청)에 넣고 넘으면 error{rate_limited, until}"
+    },
+    "GroupInviteSent": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group.invite.sent"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 ④) group.invite 의 답(칸 없음)"
+    },
+    "GroupInviteAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group.invite.answer"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "group_invites 의 id"
+        },
+        "answer": {
+          "enum": ["accept", "decline"]
+        }
+      },
+      "required": ["t", "id", "answer"],
+      "additionalProperties": false,
+      "description": "C→S(#845 ④) 받은 그룹 초대에 답. 답 프레임 없음, 거절·모르는·끝난 id 는 조용하다. 수락하면 초대한 사람과 연락처가 되고(같은 조직이 아니면) 그 카드가 joining:true 로 남는다 — 그룹 멤버 기기가 add 하면 카드가 사라지고 groups 에 그룹이 생긴다. 지금 붙은 멤버에겐 groups(joining 포함)를 다시 보낸다"
+    },
+    "GroupInvites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "message.schema.json#/$defs/Ulid"
+          },
+          "group": {
+            "$ref": "message.schema.json#/$defs/GroupAddress"
+          },
+          "by": {
+            "$ref": "message.schema.json#/$defs/PersonAddress",
+            "description": "초대한 사람"
+          },
+          "by_display": {
+            "type": "string"
+          },
+          "at": {
+            "$ref": "message.schema.json#/$defs/Timestamp"
+          },
+          "members": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "그룹의 지금 멤버 수(그룹 이름은 relay 가 모른다)"
+          },
+          "joining": {
+            "const": true,
+            "description": "수락했고 멤버 기기의 add 를 기다린다('들어가는 중')"
+          }
+        },
+        "required": ["id", "group", "by", "at", "members"],
+        "additionalProperties": false
+      },
+      "description": "#845 ④ 받은 그룹 초대(30일). contacts 연결에만"
+    },
+    "GroupMembers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DirectoryPeopleItem"
+      },
+      "description": "#845 ④(§7-14·§8-1) 내 그룹들의 지금 멤버 중 같은 조직도 연락처도 아닌 사람. people 항목과 같은 꼴에서 주소·표시 이름·look·아바타(blob.get 은 지금 같은 그룹 멤버까지)·기기(device_id·키·v·certs, 이름·os·접속 없음)·revocations 만 — 앱이 그룹 잎을 검증하고 얼굴을 보인다. 이메일·접속·팀·초대 관계 없음. contacts 연결에만. 1:1·세션은 열리지 않는다(pair 대상 아님)"
+    },
+    "ContactLinkPreview": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "contact_link.preview"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{16,128}$",
+          "description": "초대 링크의 토큰"
+        }
+      },
+      "required": ["t", "token"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-23, 기능 표시 contacts) 가입한 사람이 연락처 링크를 열었을 때 수락 카드에 보일 주인 미리보기. 답은 같은 t 의 S→C contact_link.preview(ContactLinkPreviewAnswer). 사람 찾기 상한(없는 아이디 통 — 사용자·IP 분당 10·하루 300)에 센다, 넘으면 error{rate_limited, until, ref}"
+    },
+    "ContactLinkPreviewAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "contact_link.preview"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "주인 표시 이름(없으면 아이디)"
+        },
+        "look": {
+          "type": "object",
+          "description": "#874 고른 기본 이미지 — 꼴은 $defs/Look. 없으면 생략. hello.look 없이 붙은 연결엔 relay 가 뺀다(옛 앱은 모르는 칸을 거절). 받는 쪽은 Look 으로 읽어 보고 못 읽으면(앞으로 더할 kind·규칙 밖 값) 이 칸만 버린다 — 디렉터리 전체를 버리지 않게 여기선 꼴을 묶지 않는다(설계 #874 §6)"
+        },
+        "tone": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "description": "#845 §7-23 주인의 제 색 번호 — 주인 주소(아이디@ready.server)의 UTF-16 코드 합 % 6 + 1(앱 orgTile 과 같은 식). 주소는 싣지 않는다. look 이 있으면 look 이 먼저, 없을 때 얼굴 색에 쓴다. 살아 있는 링크(막힌 사이 포함)에만"
+        },
+        "mine": {
+          "const": true,
+          "description": "내 링크"
+        },
+        "gone": {
+          "const": true,
+          "description": "모르는·다시 만든 옛 토큰·나간 사람"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 §7-23) contact_link.preview 의 답. 살아 있는 링크면 name·look(아바타·이메일·접속·조직 없음), 내 링크면 mine, 끝난 링크면 gone. 막힌 사이도 살아 있는 링크와 같은 답(수락 link.join 은 조용히 아무 일 없음)"
+    },
+    "OrgCodeCheck": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.code.check"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "조직 초대 코드(가입의 invites/check 의 invite 와 같은 값)"
+        }
+      },
+      "required": ["t", "code"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-46, 기능 표시 org_move) 가입한 사람이 낸 조직 초대 코드의 카드 — 읽기만, 초대를 쓰지 않는다. 답은 같은 t 의 S→C org.code.check. 틀린 코드가 사용자당 1시간 10번이면 error{rate_limited, ref: req, until}"
+    },
+    "OrgCodeCheckAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.code.check"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "org_name": {
+          "type": "string"
+        },
+        "org_id": {
+          "type": "string"
+        },
+        "inviter": {
+          "type": "object",
+          "properties": {
+            "user": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            }
+          },
+          "required": ["user", "display_name"],
+          "additionalProperties": false,
+          "description": "초대를 만든 관리자"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "ws.schema.json#/$defs/DirectoryTeam"
+          },
+          "description": "그 조직의 팀(이름순)"
+        },
+        "org_avatar": {
+          "type": "string",
+          "description": "조직 사진 PNG base64(invites/check 와 같음). 없으면 생략"
+        },
+        "org_color": {
+          "$ref": "#/$defs/OrgColor",
+          "description": "그 조직 고유색. 없으면 생략"
+        },
+        "other_email": {
+          "type": "string",
+          "description": "살아 있는 초대가 다른 이메일에 묶였다 — 묶인 이메일의 가린 꼴(이메일 없는 사람도). 카드 칸은 없다"
+        },
+        "gone": {
+          "const": true,
+          "description": "없음·끝남·쓰임·회수(가르지 않음)"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 §7-46) org.code.check 의 답. 쓸 수 있는 초대면 org_name·org_id·inviter·teams(·org_avatar), 다른 이메일 것이면 other_email, 아니면 gone"
+    },
+    "OrgExternalPreview": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.external.preview"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "C→S(#845 둘째 ③, 기능 표시 org_external_preview) 조직 밖 연락 막기를 켜기 전 조직 전체 셈 — 읽기만. 관리자·조직(개인 공간 아님)만, 어기면 error{protocol, ref: req}. 답은 같은 t 의 S→C org.external.preview"
+    },
+    "OrgExternalPreviewAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.external.preview"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "frozen": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "얼 연락처 — (멤버, 조직 밖 사람) 수락된 쌍 수. 디렉터리 links 와 같은 거름(상대 조직이 이미 닫아 언 쌍은 빼고 센다)"
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "지워질 걸린 요청 — 멤버와 조직 밖 사람 사이 만료 전 요청 쌍 수(받은·보낸, 엇갈린 둘은 한 쌍)"
+        },
+        "invites": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "지워질 미가입 이메일 초대 — 멤버가 보낸 만료 전 것 수"
+        }
+      },
+      "required": ["t", "frozen", "pending", "invites"],
+      "additionalProperties": false,
+      "description": "S→C(#845 둘째 ③) org.external.preview 의 답 — 조직 멤버 전체 몫. 이미 닫힌 조직이면 셋 다 0 꼴(켤 때 지웠고 연락처는 이미 얼었다)"
+    },
+    "OrgJoin": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.join"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "조직 초대 코드"
+        },
+        "teams": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "고른 팀 id — 그 조직 것만(아니면 error{protocol})"
+        }
+      },
+      "required": ["t", "code"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-46, 기능 표시 org_move) 개인 공간인 사람이 초대 코드로 그 조직에 든다(가입의 초대 검사와 같음 — 이메일 묶인 초대는 내 이메일만). 확인 안 된 기기는 error{device_unconfirmed}. 답은 같은 t 의 S→C org.join — 성공이면 그 뒤 내 연결 모두에 error{org_changed} 를 보내고 닫는다(org.invite.answer 수락과 같은 옮김: 공개 범위 '조직 전체'는 '나만'으로, 받은 조직 초대 카드는 닫힘)"
+    },
+    "OrgJoinAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.join"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "refused": {
+          "enum": ["invalid_invite", "invite_other_email", "not_personal"],
+          "description": "없으면 성공. invalid_invite = 없음·끝남·쓰임·회수, invite_other_email = 다른 이메일 앞 초대(email 동반, 초대는 그대로), not_personal = 지금 개인 공간이 아님"
+        },
+        "email": {
+          "type": "string",
+          "description": "invite_other_email 일 때 묶인 이메일의 가린 꼴"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 §7-46) org.join 의 답 — 성공은 {req} 하나(error{org_changed} 보다 먼저 간다)"
+    },
+    "OrgCreate": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.create"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "답에 그대로 싣는 짝 값"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "조직 이름(display_name 규칙으로 정리 — 규칙 밖이면 error{protocol})"
+        },
+        "setup_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "조직 만들기 코드(서버가 code 모드일 때)"
+        }
+      },
+      "required": ["t", "name"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-46, 기능 표시 org_move) 개인 공간인 사람이 조직을 만들고 그리로 옮긴다(가입의 조직 만들기와 같은 거절 순서·이유, 늦춤은 IP 대신 사용자 키). 확인 안 된 기기는 error{device_unconfirmed}, 코드 늦춤은 error{rate_limited, ref: req, until}. 답은 같은 t 의 S→C org.create — 성공이면 그 뒤 error{org_changed} 와 연결 닫힘"
+    },
+    "OrgCreateAnswer": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.create"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "refused": {
+          "enum": [
+            "invalid_invite",
+            "setup_code_other_email",
+            "setup_code_expired",
+            "org_create_closed",
+            "org_rate_limited",
+            "not_personal"
+          ],
+          "description": "없으면 성공. invalid_invite = 틀린 코드·code 모드에 코드 없음(승인된 이메일도 아님), setup_code_other_email = 다른 이메일 전용 코드(email 동반), setup_code_expired = 기한 지난 코드, org_create_closed = 조직 수 상한, org_rate_limited = 코드 없는 만들기 상한(사용자·전역), not_personal = 지금 개인 공간이 아님"
+        },
+        "email": {
+          "type": "string",
+          "description": "setup_code_other_email 일 때 묶인 이메일의 가린 꼴"
+        }
+      },
+      "required": ["t"],
+      "additionalProperties": false,
+      "description": "S→C(#845 §7-46) org.create 의 답 — 성공은 {req} 하나(error{org_changed} 보다 먼저 간다)"
+    },
+    "ListPut": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "list.put" },
+        "req": { "type": "string", "maxLength": 64 },
+        "list_id": { "$ref": "#/$defs/ListId" },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "앞뒤 공백 뗀 뒤 1~40 글자, 제어·서식 문자 없음(같은 이름 허용)"
+        },
+        "users": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$" },
+          "description": "0~256명, 나 자신·중복 없음. 같은 조직도 수락된 연락처(얼린 것 포함)도 아닌 사람은 거절하지 않고 빼고 저장(org_external 있는 relay)"
+        }
+      },
+      "required": ["t", "list_id", "name", "users"],
+      "additionalProperties": false,
+      "description": "C→S(#845 둘째, 기능 표시 lists) 친구 목록 통째 덮어쓰기 — 만들기·이름 바꾸기·사람 더하기/빼기 다 이것. 답 프레임 없음: 내 연결 모두와 들고 난 사람에게 directory.update. 꼴(나 자신·중복 포함)을 어기면 error{protocol, ref: req}, 주인당 32개를 넘는 새 목록은 error{quota, ref: req}. 두 기기가 동시에 고치면 뒤에 온 것이 이긴다"
+    },
+    "ListDelete": {
+      "type": "object",
+      "properties": {
+        "t": { "const": "list.delete" },
+        "req": { "type": "string", "maxLength": 64 },
+        "list_id": { "$ref": "#/$defs/ListId" }
+      },
+      "required": ["t", "list_id"],
+      "additionalProperties": false,
+      "description": "C→S(#845 둘째, 기능 표시 lists) 친구 목록 지우기. 없는 id 는 조용히 끝. 답 프레임 없음: 내 연결 모두와 그 목록에 있던 사람에게 directory.update. 그 목록을 고른 audience 는 좁아지기만 한다(relay 는 저장된 audience 를 고치지 않고 없는 id 를 빈 목록으로 본다)"
+    },
+    "MuteSet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "mute.set"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "conv": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "대화 주소 — 그룹 `+<gid>@서버`, 사람 `아이디@서버`, 에이전트 세션 `아이디@서버/slug`. 주소 꼴이 아니면 error{protocol, ref: req}"
+        },
+        "until": {
+          "anyOf": [
+            {
+              "$ref": "message.schema.json#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "없음 = 풀 때까지, 시각 = 그때까지, null·지난 시각 = 풂"
+        }
+      },
+      "required": ["t", "conv"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-56, 기능 표시 mutes) 계정 단위 대화 음소거 — 내 모든 기기가 같이 쓴다. 답 프레임 없음: 바뀌면 내 연결 모두에 directory.update(mutes). 계정당 500개 — 넘는 새 대화는 error{quota, ref: req}. relay 는 받는 사람이 음소거한 대화(머리 group, 없으면 from.address — 세션 주소에서 온 글은 그 사람 주소 음소거에도 걸림)의 chat·reaction 푸시를 그 사람의 모든 기기에 보내지 않는다(request·reply·승인·초대·기기 확인은 그대로, push.register.off 와는 둘 중 하나라도 끄면 안 감)"
+    },
+    "PinSet": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "pin.set"
+        },
+        "req": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "conv": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "대화 주소 — 그룹 `+<gid>@서버`, 사람 `아이디@서버`. 세션 주소(`/` 있음)·내 주소·꼴 틀림은 error{protocol, ref: req}"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "0~8 = 그 자리에 넣기(이미 있으면 옮기기, 목록 길이로 자름), null = 풀기"
+        }
+      },
+      "required": ["t", "conv", "index"],
+      "additionalProperties": false,
+      "description": "C→S(#880, 기능 표시 pins) 계정 단위 대화 고정 — 내 모든 기기가 같이 쓴다. 목록 통째가 아니라 한 동작씩(두 기기가 동시에 고쳐도 한쪽이 사라지지 않게). 답 프레임 없음: 바뀌면 내 연결 모두에 directory.update(pins). 계정당 PINS_MAX(9) — 찬 뒤 새 대화는 error{quota, ref: req}. relay 는 내가 그룹에서 나가면 그 그룹을, 연락처를 끊거나 막으면 그 사람을, 계정을 지우면 전부를 뺀다"
+    },
+    "Pins": {
+      "type": "array",
+      "maxItems": 9,
+      "items": {
+        "type": "string"
+      },
+      "description": "#880 내 계정의 고정한 대화 주소(위에서부터 순서). hello.pins 로 붙은 연결에만"
+    },
+    "Mutes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "properties": {
+          "conv": {
+            "type": "string"
+          },
+          "until": {
+            "$ref": "message.schema.json#/$defs/Timestamp",
+            "description": "없으면 풀 때까지"
+          }
+        },
+        "required": ["conv"],
+        "additionalProperties": false
+      },
+      "description": "#845 §7-56 내 계정의 음소거한 대화(지난 것은 빠짐). hello.mutes 로 붙은 연결에만"
+    },
+    "OrgInviteWithdraw": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "org.invite.withdraw"
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "org_invites_sent 의 id"
+        }
+      },
+      "required": ["t", "id"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-26) 그 조직 관리자 누구나 보낸 조직 초대 거두기 — 보낸 줄·받는 쪽 카드·아직 안 간 메일을 없앤다. 답 프레임 없음, 모르는 id 조용, 받는 쪽엔 알리지 않음, 셈은 돌려주지 않음. 결과는 관리자들에게 directory.update"
+    },
+    "GroupInviteWithdraw": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "const": "group.invite.withdraw"
+        },
+        "id": {
+          "$ref": "message.schema.json#/$defs/Ulid",
+          "description": "group_invites_sent 의 id"
+        }
+      },
+      "required": ["t", "id"],
+      "additionalProperties": false,
+      "description": "C→S(#845 §7-26) 보낸 사람만 그룹 초대 거두기. 이미 수락해 들어가는 중이면 아무 일 없음. 그 밖은 org.invite.withdraw 와 같음(결과는 나에게 directory.update)"
+    },
+    "OrgInvitesSent": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "message.schema.json#/$defs/Ulid"
+          },
+          "shown": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "보낸 관리자가 친 그대로"
+          },
+          "at": {
+            "$ref": "message.schema.json#/$defs/Timestamp"
+          }
+        },
+        "required": ["id", "shown", "at"],
+        "additionalProperties": false
+      },
+      "description": "#845 §7-26 그 조직이 보낸 초대(30일, 들어온 사람은 빠지고 people 에). 거절·막힘·가입 안 함이어도 30일 그대로 — 그 조직 관리자 전원에게, contacts 연결에만"
+    },
+    "GroupInvitesSent": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "message.schema.json#/$defs/Ulid"
+          },
+          "group": {
+            "$ref": "message.schema.json#/$defs/GroupAddress"
+          },
+          "shown": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "보낸 사람이 친 그대로"
+          },
+          "at": {
+            "$ref": "message.schema.json#/$defs/Timestamp"
+          }
+        },
+        "required": ["id", "group", "shown", "at"],
+        "additionalProperties": false
+      },
+      "description": "#845 §7-26 내가 보낸 그룹 초대(30일, 수락하면 빠지고 groups.items[].joining 에). 보낸 사람 본인에게만, contacts 연결에만"
+    }
+  }
+}

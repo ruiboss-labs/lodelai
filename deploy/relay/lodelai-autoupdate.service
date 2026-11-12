@@ -1,0 +1,10 @@
+# lodelai 서버 스스로 받기(묶음 29 §2). lodelai-autoupdate.timer 가 하루 한 번 부른다. 게시 뒤 72시간이 지난 서명된 판만 받는다.
+# 로컬 빌드 판(update.env 의 binary:)·--no-auto-update 로 깐 서버에는 이 유닛이 없다. 결과: journalctl -u lodelai-autoupdate
+[Unit]
+Description=lodelai relay self-update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lodelai/bin/lodelai-update --auto

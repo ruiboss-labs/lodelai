@@ -1,0 +1,42 @@
+{
+  "about": "첨부 blob 교차 검증 벡터(묶음 15 §1, ADR 0009 §2). crates/crypto tests/blob.rs 가 만든다(LODELAI_REGEN_E2E_VECTORS=1). 평문 n 바이트 = i mod 251. TS packages/protocol/src/blob.test.ts 가 같은 바이트를 다시 만든다.",
+  "blob_id": "b_AAECAwQFBgcICQoLDA0ODw",
+  "cases": [
+    {
+      "ct": "7b7408341fca238d7e4c0ed54d967150",
+      "ct_len": 16,
+      "ct_sha256": "df7dceca7a4084e82a1fc13a15aca1f8a7918f1f0ae39cb22234938b787448eb",
+      "n": 0
+    },
+    {
+      "ct": "20e72d376b84e33f03394b3ca0308d9e64",
+      "ct_len": 17,
+      "ct_sha256": "548eb250c3378b791b1dbcbd295160fa168b3d0620f1940dc09fff153d5551b0",
+      "n": 1
+    },
+    {
+      "ct": "203d54e0c06c406b5486c1902c1f1cc74ce1970b981f1f7fcb6bd9c3555e2311bb00684f1cd010701ecf42ae44b98ce7f245a8f75f95a17fef9d2a542932dbaefa7a855ad8e15b3ac506dce081ba3c439cbdc0f2d7e50f462ce53301266208fb946ccc8c8908bef381ff59f73484a7f097208610",
+      "ct_len": 116,
+      "ct_sha256": "43afc8ef01b98d7c3549eac6809f6fddd3609cff234556355f589571d2a9da34",
+      "n": 100
+    },
+    {
+      "ct_len": 65552,
+      "ct_sha256": "1ed5d48fdba40cb4faa5ac88f9ab694a397b9b3105ed914e7be25288ad6070ab",
+      "n": 65536
+    },
+    {
+      "ct_len": 65569,
+      "ct_sha256": "36d2d70b1024a8fc33f88b8c883063058bb73525a54531f6ca8e43bc34bf4b8b",
+      "n": 65537
+    },
+    {
+      "ct_len": 196679,
+      "ct_sha256": "f979bb5e0883b05e22289d153650aae42ee000ca88390b6c52f63fe78d146f8a",
+      "n": 196615
+    }
+  ],
+  "chunk": 65536,
+  "fk": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+  "prefix": "606162636465666768696a6b6c6d6e6f707172"
+}
