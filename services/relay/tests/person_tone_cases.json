@@ -1,0 +1,26 @@
+[
+  {
+    "address": "ann@relay.lodelai.com",
+    "tone": 6
+  },
+  {
+    "address": "bob@localhost:8443",
+    "tone": 2
+  },
+  {
+    "address": "zed@x.l",
+    "tone": 2
+  },
+  {
+    "address": "서준@relay.lodelai.com",
+    "tone": 3
+  },
+  {
+    "address": "김철수@회사.한국",
+    "tone": 4
+  },
+  {
+    "address": "a😀b@x.l",
+    "tone": 1
+  }
+]

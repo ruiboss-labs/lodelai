@@ -1,0 +1,46 @@
+[package]
+name = "lodelai-crypto"
+description = "lodelai 기기 키·Ed25519 서명·X25519 키·JCS(RFC 8785)·KeyStore (U1b, #53). core·protocol 타입에 의존하지 않는다"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_json_canonicalizer = "0.4"
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+sha2 = "0.10"
+# E2E 봉투(#313, 설계 e2e-envelope.md §3.5) — 스파이크 #245 와 같은 버전.
+chacha20poly1305 = { version = "0.10", features = ["stream"] }
+subtle = "2"
+# #881 지난 대화 옮기기의 봉한 표(HPKE base, RFC 9180) — openmls 가 이미 들여온 것과 같은 판·같은 구현(손으로 짜지 않는다).
+hpke-rs = { version = "0.6.1", default-features = false }
+hpke-rs-crypto = "0.6.1"
+hpke-rs-rust-crypto = "0.6.1"
+hkdf = "0.12"
+base64 = "0.22"
+zeroize = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+security-framework = "3"
+
+[target.'cfg(unix)'.dependencies]
+# 감싼 키 파일 열기의 O_NOFOLLOW(wrapped.rs).
+libc = "0.2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# AndroidKeyStore 감싸기(wrapped/android.rs) — tao·tauri 가 쓰는 판과 같다.
+jni = "0.21"
+ndk-context = "0.1"
+
+[dev-dependencies]
+hex = "0.4"
+tempfile = "3"
+
+[lints]
+workspace = true

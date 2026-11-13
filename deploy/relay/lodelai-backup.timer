@@ -1,0 +1,11 @@
+[Unit]
+Description=lodelai relay DB backup (매일 새벽)
+
+[Timer]
+# 서버 시각(문서 self-host.md '매일 04:30(서버 시각)'). 시간대 이름을 붙이면 tzdata 없는 서버에서 파싱이 실패한다.
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
