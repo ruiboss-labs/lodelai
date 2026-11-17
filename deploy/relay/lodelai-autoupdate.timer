@@ -1,0 +1,11 @@
+# lodelai 서버 스스로 받기 — 하루 한 번, 서버 시각 04:00 + 무작위 0~60분(여러 서버가 같은 순간에 받지 않게).
+[Unit]
+Description=lodelai relay self-update (daily)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
