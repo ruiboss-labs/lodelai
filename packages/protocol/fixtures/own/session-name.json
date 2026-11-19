@@ -1,0 +1,86 @@
+{
+  "about": "#1443 내 에이전트의 보이는 이름: 세션 이름(대화 제목 → 작업 폴더 이름 → slug) 뒤에 코어가 매긴 같은 이름 번호 ` #{no}`(번호가 없으면 이름만, 제목이 있어도 번호가 있으면 붙인다). untitled 는 제목이 없을 때. 코어 crates/core/src/engine/own_state.rs own_name(휴대폰 own_state ext.name·ext.untitled)·맥 SessionWindow.tsx windowTitle(사이드바·창 제목과 같은 이름) 이 같이 읽는다. 제목은 코어가 가린 뒤의 글이다.",
+  "cases": [
+    {
+      "name": "제목이 있어도 같은 이름 번호가 있으면 붙인다",
+      "title": "결제 버그 고치기",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "결제 버그 고치기 #9",
+      "untitled": false
+    },
+    {
+      "name": "제목이 있고 번호 없으면 제목만",
+      "title": "결제 버그 고치기",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": null,
+      "want": "결제 버그 고치기",
+      "untitled": false
+    },
+    {
+      "name": "번호 꼴 제목 둘째 — 맥 「mobmac #8 #2」",
+      "title": "mobmac #8",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-12",
+      "no": 2,
+      "want": "mobmac #8 #2",
+      "untitled": false
+    },
+    {
+      "name": "제목 없으면 폴더 #번호",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "mobmac #9",
+      "untitled": true
+    },
+    {
+      "name": "빈 제목은 없음과 같다",
+      "title": "",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "mobmac #9",
+      "untitled": true
+    },
+    {
+      "name": "번호 없으면 폴더만",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac",
+      "no": null,
+      "want": "mobmac",
+      "untitled": true
+    },
+    {
+      "name": "폴더 끝 / 는 뗀다",
+      "title": null,
+      "cwd": "/home/a/proj A/",
+      "slug": "proj-a",
+      "no": 2,
+      "want": "proj A #2",
+      "untitled": true
+    },
+    {
+      "name": "폴더 모르면 slug #번호",
+      "title": null,
+      "cwd": null,
+      "slug": "mobmac-11",
+      "no": 3,
+      "want": "mobmac-11 #3",
+      "untitled": true
+    },
+    {
+      "name": "폴더 모르고 번호 없으면 slug",
+      "title": null,
+      "cwd": null,
+      "slug": "mobmac-11",
+      "no": null,
+      "want": "mobmac-11",
+      "untitled": true
+    }
+  ]
+}
