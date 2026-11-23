@@ -1,0 +1,17 @@
+[package]
+name = "lodelai-testkit"
+description = "lodelai 공용 테스트 도구: 상태 머신 yaml(선 machines/wire.yaml) 로더·전수 검사·참조 인터프리터. core·relay 의 L1 시험이 같이 쓴다 (U13a, #36)"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lodelai-effects = { path = "../effects" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng = "0.10.0"
+
+[lints]
+workspace = true

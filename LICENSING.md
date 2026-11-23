@@ -1,0 +1,3 @@
+# Licensing
+
+Lodelai uses two licenses. The relay server and its self-hosting scripts (`services/relay`, `deploy/relay`) are under the [GNU Affero General Public License v3.0](LICENSE-AGPL): you can run, change, and share them freely, but if you run a modified relay as a service for others, you must offer them your changed source. Everything else — the protocol, the encryption client, and the supporting crates — is under the [Apache License 2.0](LICENSE-APACHE), so you can build them into your own clients and agents, open or closed. The relay we host and the one bundled in the lodelai Mac app are built from the tagged releases here, unmodified.
