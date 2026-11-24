@@ -1,0 +1,19 @@
+{
+  "name": "@lodelai/protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generated/*": "./src/generated/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "gen": "bun scripts/gen.ts"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers": "0.7.14",
+    "json-schema-to-typescript": "16.0.0",
+    "libsodium-wrappers": "0.7.15"
+  }
+}
