@@ -1,0 +1,24 @@
+# lodelai 서버 감시 — 바깥 주소 healthz → healthchecks ping. 타이머 lodelai-health.timer(5분).
+[Unit]
+Description=lodelai relay health ping
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=lodelai
+Group=lodelai
+EnvironmentFile=-/etc/lodelai/backup.env
+ExecStart=/opt/lodelai/bin/lodelai-health
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+CapabilityBoundingSet=
