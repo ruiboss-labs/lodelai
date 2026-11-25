@@ -1,0 +1,96 @@
+{
+  "about": "#1386 같은 slug 의 지금 임자: 살아 있는 것 → 공개 중인 것 → 나중에 만든 것(started_at) → session_id 큰 것. 코어 crates/core/src/slug_owner.rs·맥 projection.ts sessionBySlug 가 같이 읽는다(넣는 차례 바로·거꾸로).",
+  "cases": [
+    {
+      "name": "꺼진 둘 동점 → 나중에 만든 것",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "new", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.000Z" },
+        { "session_id": "old", "slug": "b", "liveness": "dead", "started_at": "2026-11-17T10:00:00.000Z" }
+      ],
+      "owner": "new"
+    },
+    {
+      "name": "꺼진 공개(옛) vs 꺼진 비공개(나중) → 공개",
+      "slug": "b",
+      "sessions": [
+        {
+          "session_id": "old",
+          "slug": "b",
+          "liveness": "dead",
+          "grade": "question",
+          "started_at": "2026-11-17T10:00:00.000Z"
+        },
+        { "session_id": "new", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.000Z" }
+      ],
+      "owner": "old"
+    },
+    {
+      "name": "산 비공개 vs 꺼진 공개 → 산 것",
+      "slug": "b",
+      "sessions": [
+        {
+          "session_id": "pub",
+          "slug": "b",
+          "liveness": "dead",
+          "grade": "task",
+          "started_at": "2026-11-18T10:00:00.000Z"
+        },
+        { "session_id": "live", "slug": "b", "liveness": "live:hook", "started_at": "2026-11-17T10:00:00.000Z" }
+      ],
+      "owner": "live"
+    },
+    {
+      "name": "산 둘 → 나중에 만든 것",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "a1", "slug": "b", "liveness": "live:pty", "started_at": "2026-11-18T10:00:00.000Z" },
+        { "session_id": "a2", "slug": "b", "liveness": "live:next_turn", "started_at": "2026-11-18T11:00:00.000Z" }
+      ],
+      "owner": "a2"
+    },
+    {
+      "name": "밀리초만 다름 → 나중 것",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "z", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.001Z" },
+        { "session_id": "y", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.002Z" }
+      ],
+      "owner": "y"
+    },
+    {
+      "name": "시작 시각 모름은 가장 옛것",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "z", "slug": "b", "liveness": "dead" },
+        { "session_id": "a", "slug": "b", "liveness": "dead", "started_at": "2020-01-01T00:00:00.000Z" }
+      ],
+      "owner": "a"
+    },
+    {
+      "name": "시각까지 같으면 session_id 큰 것",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "s2", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.000Z" },
+        { "session_id": "s1", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.000Z" }
+      ],
+      "owner": "s2"
+    },
+    {
+      "name": "unknown 은 산 것이 아님 · 다른 slug 는 안 봄",
+      "slug": "b",
+      "sessions": [
+        { "session_id": "u", "slug": "b", "liveness": "unknown", "started_at": "2026-11-17T10:00:00.000Z" },
+        { "session_id": "d", "slug": "b", "liveness": "dead", "started_at": "2026-11-18T10:00:00.000Z" },
+        { "session_id": "x", "slug": "c", "liveness": "live:channel", "started_at": "2026-11-19T10:00:00.000Z" }
+      ],
+      "owner": "d"
+    },
+    {
+      "name": "slug 없음 → 없음",
+      "slug": null,
+      "sessions": [{ "session_id": "p", "liveness": "live:hook", "started_at": "2026-11-18T10:00:00.000Z" }],
+      "owner": null
+    }
+  ]
+}

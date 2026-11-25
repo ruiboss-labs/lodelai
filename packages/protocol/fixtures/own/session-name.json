@@ -1,0 +1,147 @@
+{
+  "about": "#1443 내 에이전트의 보이는 이름(판정 7041677952): 묶음 이름(대화 제목 → 작업 폴더 이름 → slug) + 코어가 같은 이름 번호를 줬으면 ` #{no}` — 제목이냐로 갈리지 않는다. 번호는 코어가 매긴 것 하나(묶음은 이름만·폴더 무관, /clear 사슬은 하나로 셈 — 그때 no 가 없다). untitled 는 제목이 없어 폴더·slug 이름일 때. 코어 crates/core/src/engine/own_state.rs own_name(휴대폰 own_state ext.name·ext.untitled)·맥 labels.ts mySessionLabel·agentShortName(카드 머리) 이 같이 읽는다. 제목은 코어가 가린 뒤의 글이다.",
+  "cases": [
+    {
+      "name": "제목 + 번호 → 제목 #번호",
+      "title": "결제 버그 고치기",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "결제 버그 고치기 #9",
+      "untitled": false
+    },
+    {
+      "name": "제목 + 번호 없음 → 제목만",
+      "title": "결제 버그 고치기",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": null,
+      "want": "결제 버그 고치기",
+      "untitled": false
+    },
+    {
+      "name": "제목 없으면 폴더 #번호",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "mobmac #9",
+      "untitled": true
+    },
+    {
+      "name": "빈 제목은 없음과 같다",
+      "title": "",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "mobmac #9",
+      "untitled": true
+    },
+    {
+      "name": "번호 없으면 폴더만",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac",
+      "no": null,
+      "want": "mobmac",
+      "untitled": true
+    },
+    {
+      "name": "폴더 끝 / 는 뗀다",
+      "title": null,
+      "cwd": "/home/a/proj A/",
+      "slug": "proj-a",
+      "no": 2,
+      "want": "proj A #2",
+      "untitled": true
+    },
+    {
+      "name": "폴더 모르면 slug #번호",
+      "title": null,
+      "cwd": null,
+      "slug": "mobmac-11",
+      "no": 3,
+      "want": "mobmac-11 #3",
+      "untitled": true
+    },
+    {
+      "name": "폴더 모르고 번호 없으면 slug",
+      "title": null,
+      "cwd": null,
+      "slug": "mobmac-11",
+      "no": null,
+      "want": "mobmac-11",
+      "untitled": true
+    },
+    {
+      "name": "폴더가 다른 같은 이름의 뒤쪽은 코어 번호(묶음은 이름만)",
+      "title": null,
+      "cwd": "/w/p2/api",
+      "slug": "api-2",
+      "no": 2,
+      "want": "api #2",
+      "untitled": true
+    },
+    {
+      "name": "같은 이름의 첫째는 번호 없음",
+      "title": null,
+      "cwd": "/w/p1/api",
+      "slug": "api",
+      "no": null,
+      "want": "api",
+      "untitled": true
+    },
+    {
+      "name": "/clear 사슬은 한 에이전트 — 코어 번호 없음, 화면이 차례를 지어 붙이지 않음",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-8",
+      "no": null,
+      "want": "mobmac",
+      "untitled": true
+    }
+  ],
+  "split_about": "#1622 휴대폰이 이름(ext.name)을 이름 칸·번호 조각으로 가르는 꼴 — 코어 own_name(title·cwd·slug·no)이 want 를 짓고, 휴대폰 splitNameNo(want, no)가 (name, piece)로 가른다. 번호가 있고 이름이 정확히 ` #{no}` 로 끝날 때만 뗀다(판정 7048504608).",
+  "split": [
+    {
+      "name": "제목이 #3 으로 끝나도 번호가 없으면 안 뗀다",
+      "title": "fix #3",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac",
+      "no": null,
+      "want": "fix #3",
+      "piece_name": "fix #3",
+      "piece": null
+    },
+    {
+      "name": "제목 「fix #3」+ 번호 3 → 이름 「fix #3」+ 조각 #3",
+      "title": "fix #3",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac",
+      "no": 3,
+      "want": "fix #3 #3",
+      "piece_name": "fix #3",
+      "piece": 3
+    },
+    {
+      "name": "제목 없는 폴더 이름 + 번호",
+      "title": null,
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac-11",
+      "no": 9,
+      "want": "mobmac #9",
+      "piece_name": "mobmac",
+      "piece": 9
+    },
+    {
+      "name": "32자로 잘린 한글 제목 + 번호 — 번호는 조각으로 남는다",
+      "title": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가",
+      "cwd": "/home/a/mobmac",
+      "slug": "mobmac",
+      "no": 12,
+      "want": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가… #12",
+      "piece_name": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가…",
+      "piece": 12
+    }
+  ]
+}

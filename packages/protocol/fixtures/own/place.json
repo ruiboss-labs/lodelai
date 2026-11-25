@@ -1,0 +1,429 @@
+{
+  "$comment": "#1979 내 에이전트끼리 글의 자리(m1-spec §36.2) — 맥 화면 conversationOf 와 코어 conversation_place 가 같이 읽는 표. ME = 내 사람 주소(읽는 쪽이 자기 값으로 바꾼다). rows: dir(in|out)·kind·from·to·group·reply_to·pair_out(이 in 사본의 짝 out 행)·origin·origin_msg(화면 이벤트에 실리는 출처 칸 — 코어는 짝 표·보낸 출처·머리에서 같은 값을 읽는다). 회신·통지(request 가 아닌 행)의 origin·origin_msg 는 그 요청에서 물려 적은 값이다(#2021 — 코어는 place_origins 에서 읽는다). 출처 칸이 없는 회신·통지는 물려 적기 전의 옛 행. expect: 행 id → 그 글이 놓이는 대화.",
+  "cases": [
+    {
+      "name": "동료 글은 상대 사람",
+      "rows": [
+        {
+          "id": "R01",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R02",
+          "dir": "out",
+          "kind": "chat",
+          "from": "ME",
+          "to": "dana@lodelai.test"
+        }
+      ],
+      "expect": {
+        "R01": "dana@lodelai.test",
+        "R02": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "내가 시작한 넘긴 글은 나",
+      "rows": [
+        {
+          "id": "R01",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/web",
+          "origin": "me"
+        },
+        {
+          "id": "R02",
+          "dir": "in",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/web",
+          "pair_out": "R01",
+          "origin": "me"
+        }
+      ],
+      "expect": {
+        "R01": "ME",
+        "R02": "ME"
+      }
+    },
+    {
+      "name": "동료 요청에서 시작 — 그 요청 행의 대화",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R11",
+          "dir": "in",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "pair_out": "R10",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        }
+      ],
+      "expect": {
+        "R09": "dana@lodelai.test",
+        "R10": "dana@lodelai.test",
+        "R11": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "출처 요청 행이 없으면 출처 사람(에이전트 주소여도 사람)",
+      "rows": [
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test/web",
+          "origin_msg": "R08"
+        }
+      ],
+      "expect": {
+        "R10": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "그룹 안 요청에서 시작 — 그 그룹",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api",
+          "group": "+01jb00000000000000000000gg@lodelai.test"
+        },
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        }
+      ],
+      "expect": {
+        "R09": "+01jb00000000000000000000gg@lodelai.test",
+        "R10": "+01jb00000000000000000000gg@lodelai.test"
+      }
+    },
+    {
+      "name": "출처가 그룹 주소(행 없음) — 그 그룹",
+      "rows": [
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "+01jb00000000000000000000gg@lodelai.test",
+          "origin_msg": "R08"
+        }
+      ],
+      "expect": {
+        "R10": "+01jb00000000000000000000gg@lodelai.test"
+      }
+    },
+    {
+      "name": "회신은 그 요청의 자리(짝 in 사본을 가리킨다)",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R11",
+          "dir": "in",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "pair_out": "R10",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R11"
+        }
+      ],
+      "expect": {
+        "R20": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "내가 시작한 요청의 회신은 나",
+      "rows": [
+        {
+          "id": "R01",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/web",
+          "origin": "me"
+        },
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/web",
+          "to": "ME/api",
+          "reply_to": "R01"
+        }
+      ],
+      "expect": {
+        "R20": "ME"
+      }
+    },
+    {
+      "name": "사슬 — 넘긴 글에서 또 넘긴 글도 처음 동료 대화",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R11",
+          "dir": "in",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "pair_out": "R10",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R12",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/ops",
+          "to": "ME/qa",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R11"
+        }
+      ],
+      "expect": {
+        "R12": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "출처도 요청도 모르는 내 에이전트끼리 글은 나",
+      "rows": [
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/web",
+          "to": "ME/api",
+          "reply_to": "R77"
+        },
+        {
+          "id": "R21",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/web"
+        }
+      ],
+      "expect": {
+        "R20": "ME",
+        "R21": "ME"
+      }
+    },
+    {
+      "name": "내 다른 맥에서 온 넘긴 글 — 머리의 출처",
+      "rows": [
+        {
+          "id": "R30",
+          "dir": "in",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R08"
+        }
+      ],
+      "expect": {
+        "R30": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "요청에 달린 통지(system)도 그 요청의 자리",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R10",
+          "dir": "out",
+          "kind": "request",
+          "from": "ME/api",
+          "to": "ME/ops",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R25",
+          "dir": "in",
+          "kind": "system",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R10"
+        }
+      ],
+      "expect": {
+        "R25": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "물려 적은 회신 — 넘긴 요청 행이 없어도 그 동료 대화",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api"
+        },
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R11",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        },
+        {
+          "id": "R22",
+          "dir": "in",
+          "kind": "reply",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R10",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        }
+      ],
+      "expect": {
+        "R20": "dana@lodelai.test",
+        "R22": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "물려 적은 통지 — 요청 행도 출처 요청 행도 없으면 출처 사람",
+      "rows": [
+        {
+          "id": "R25",
+          "dir": "in",
+          "kind": "system",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R10",
+          "origin": "dana@lodelai.test/web",
+          "origin_msg": "R08"
+        }
+      ],
+      "expect": {
+        "R25": "dana@lodelai.test"
+      }
+    },
+    {
+      "name": "물려 적은 회신 — 그룹 안 요청에서 시작했으면 그 그룹",
+      "rows": [
+        {
+          "id": "R09",
+          "dir": "in",
+          "kind": "request",
+          "from": "dana@lodelai.test/web",
+          "to": "ME/api",
+          "group": "+01jb00000000000000000000gg@lodelai.test"
+        },
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/ops",
+          "to": "ME/api",
+          "reply_to": "R11",
+          "origin": "dana@lodelai.test",
+          "origin_msg": "R09"
+        }
+      ],
+      "expect": {
+        "R20": "+01jb00000000000000000000gg@lodelai.test"
+      }
+    },
+    {
+      "name": "물려 적은 회신 — 내가 시작한 요청이면 요청 행이 없어도 나",
+      "rows": [
+        {
+          "id": "R20",
+          "dir": "out",
+          "kind": "reply",
+          "from": "ME/web",
+          "to": "ME/api",
+          "reply_to": "R01",
+          "origin": "me"
+        }
+      ],
+      "expect": {
+        "R20": "ME"
+      }
+    }
+  ]
+}

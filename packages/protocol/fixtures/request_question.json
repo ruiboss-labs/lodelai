@@ -1,0 +1,24 @@
+{
+  "body": {
+    "enc": "plain",
+    "text": "GET /api/orders/:id 응답 형식을 알려 주세요 🙏\n두 번째 줄"
+  },
+  "created_at": "2026-10-23T04:12:56.000Z",
+  "expires_at": "2026-10-24T04:12:56.000Z",
+  "from": {
+    "address": "dana@lodelai.test/frontend",
+    "author": "agent",
+    "device_id": "k1_0e1qSflfIfummaFlq4TFPg",
+    "session_id": "cee3f37e-1111-4222-8333-944444444444"
+  },
+  "grade": "question",
+  "kind": "request",
+  "msg_id": "01JB0000000000000000000001",
+  "sig": "pz6z-MlRYWwZS1LI1pfFCZGKfADt-3Fpu2NwIQ6JOi9BKrm05VhV7rk6f-3hnKS-DP9Odo_e3xJrQQwPBG44Bw",
+  "state": "sent",
+  "thread_id": "01JB0000000000000000000001",
+  "to": {
+    "address": "bo@lodelai.test/backend"
+  },
+  "v": 9
+}
