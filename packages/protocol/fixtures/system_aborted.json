@@ -1,0 +1,25 @@
+{
+  "abort_reason": "turn_ended",
+  "body": {
+    "enc": "plain",
+    "text": ""
+  },
+  "created_at": "2026-10-23T04:12:56.000Z",
+  "expires_at": "2026-10-24T04:12:56.000Z",
+  "from": {
+    "address": "bo@lodelai.test",
+    "author": "human",
+    "device_id": "k1_vOBtj4nHnGfP30gqrNDJ2A"
+  },
+  "kind": "system",
+  "msg_id": "01JB0000000000000000000006",
+  "reason": "aborted",
+  "reply_to": "01JB0000000000000000000001",
+  "sig": "4oHdzKSMum-3XmpKXLesII8t5-0ZnUmw_4GZ7trRHXnIFSqAX6s9Hlt1Elt9bZJhvUbxeheJI-qATdgsjwbICw",
+  "state": "sent",
+  "thread_id": "01JB0000000000000000000001",
+  "to": {
+    "address": "dana@lodelai.test/frontend"
+  },
+  "v": 9
+}
